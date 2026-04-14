@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cc-dashboard</title>
+<style>
+  :root {
+    --bg:#0b0d10; --panel:#14171c; --panel2:#1a1e25; --edge:#242932;
+    --ink:#e6e8ee; --mute:#8a94a6; --mute2:#5c6475;
+    --accent:#7cc4ff; --accent2:#ffb86b; --good:#5ddc8a; --bad:#ff7a93; --warn:#ffd866;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-sans-serif,-apple-system,Inter,Segoe UI,system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:18px; padding:14px 24px;
+    border-bottom:1px solid var(--edge); position:sticky; top:0; background:var(--bg); z-index:10;}
+  header h1 { margin:0; font-size:15px; letter-spacing:-0.01em; font-weight:600; }
+  header .dot { width:8px; height:8px; border-radius:50%; background:var(--good);
+    box-shadow:0 0 8px var(--good); animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% {opacity:1;} 50% {opacity:0.4;} }
+  .tabs { display:flex; gap:4px; margin-left:auto; }
+  .tab { padding:6px 14px; border-radius:6px; cursor:pointer; color:var(--mute);
+    border:1px solid transparent; font-weight:500; user-select:none;}
+  .tab:hover { color:var(--ink); }
+  .tab.active { background:var(--panel); color:var(--ink); border-color:var(--edge);}
+  .tab .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px;
+    border-radius:9px; background:var(--edge); font-size:11px; text-align:center;
+    color:var(--ink); }
+  .tab.active .badge { background:var(--accent); color:#061018; }
+  main { display:grid; grid-template-columns: 1fr 420px; gap:0; min-height: calc(100vh - 54px);}
+  .list { padding:14px 0; overflow-y:auto; max-height: calc(100vh - 54px);}
+  .side { border-left:1px solid var(--edge); background:var(--panel); padding:18px 20px;
+    overflow-y:auto; max-height: calc(100vh - 54px);}
+  .empty { padding:40px 24px; color:var(--mute); text-align:center; }
+  .row { display:flex; gap:12px; padding:10px 24px; cursor:pointer; align-items:flex-start;
+    border-left:3px solid transparent; }
+  .row:hover { background:var(--panel); }
+  .row.selected { background:var(--panel); border-left-color:var(--accent); }
+  .row .pri { width:10px; height:10px; border-radius:50%; margin-top:5px; flex-shrink:0;}
+  .pri.ask { background:var(--accent); box-shadow:0 0 6px var(--accent); }
+  .pri.permission { background:var(--bad); box-shadow:0 0 8px var(--bad); }
+  .pri.failed { background:var(--warn); box-shadow:0 0 6px var(--warn);}
+  .pri.working { background:var(--good); opacity:0.7;}
+  .pri.idle { background:var(--mute2); }
+  .pri.clear { background:var(--edge); }
+  .body { flex:1; min-width:0; }
+  .title-line { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .repo { font-weight:600; color:var(--ink); font-size:13.5px;}
+  .branch { color:var(--mute); font-family:ui-monospace,Menlo,monospace; font-size:11.5px;}
+  .branch::before { content:"⎇ "; }
+  .dirty { color:var(--warn); font-size:11px; font-weight:500;}
+  .evt-badge { padding:1px 7px; border-radius:4px; font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.03em; }
+  .evt-ASK { background:rgba(124,196,255,0.15); color:var(--accent); }
+  .evt-PERMISSION_PENDING { background:rgba(255,122,147,0.15); color:var(--bad); }
+  .evt-TOOL_FAILED { background:rgba(255,216,102,0.15); color:var(--warn);}
+  .evt-WORKING { background:rgba(140,148,166,0.12); color:var(--mute);}
+  .evt-IDLE_AFTER_COMPLETE { background:rgba(93,220,138,0.12); color:var(--good);}
+  .evt-CLEAR { background:var(--edge); color:var(--mute);}
+  .reason { color:var(--accent2); font-size:12px; margin-top:3px; line-height:1.45;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 70ch; }
+  .last-prompt { color:var(--mute); font-size:11.5px; margin-top:3px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 80ch;
+    font-family: ui-monospace,Menlo,monospace;}
+  .meta-right { display:flex; flex-direction:column; align-items:flex-end; gap:2px;
+    font-size:11px; color:var(--mute); flex-shrink:0;}
+  .time { color:var(--mute2); font-variant-numeric:tabular-nums;}
+  .pid { color:var(--mute2); font-family:ui-monospace,monospace; font-size:10.5px;}
+
+  /* side panel */
+  .side h2 { margin:0 0 4px; font-size:16px;}
+  .side .sub { color:var(--mute); font-size:12px; margin-bottom:14px;}
+  .side h3 { margin:18px 0 6px; font-size:11px; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--mute);}
+  .side pre { background:var(--panel2); border:1px solid var(--edge); padding:10px 12px;
+    border-radius:6px; overflow-x:auto; font-size:11.5px; line-height:1.5; white-space:pre-wrap;
+    word-break:break-word; color:var(--ink);}
+  .side .btn-row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .btn { padding:8px 14px; border-radius:6px; border:1px solid var(--edge);
+    background:var(--panel2); color:var(--ink); cursor:pointer; font-weight:500; font-size:12px;}
+  .btn:hover { background:var(--edge);}
+  .btn.primary { background:var(--accent); color:#061018; border-color:var(--accent);}
+  .btn.primary:hover { filter:brightness(1.1);}
+  .kv { display:grid; grid-template-columns: auto 1fr; gap:4px 10px; font-size:12px;}
+  .kv dt { color:var(--mute);}
+  .kv dd { margin:0; color:var(--ink); font-family:ui-monospace,Menlo,monospace; font-size:11.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .prompt-li { padding:6px 0; border-bottom:1px dashed var(--edge); font-size:12px;
+    color:var(--ink); line-height:1.5;}
+  .prompt-li:last-child { border-bottom:0;}
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--panel); border:1px solid var(--edge); padding:10px 18px;
+    border-radius:8px; box-shadow:0 8px 32px rgba(0,0,0,0.4); font-size:12px;
+    opacity:0; transition:opacity 0.2s; pointer-events:none; z-index:100;}
+  .toast.show { opacity:1;}
+  /* Find-me sticky card (Path C — non-blocking) */
+  .finder { position:fixed; top:74px; right:18px; width:340px;
+    background:var(--panel); border:1px solid var(--accent); border-radius:12px;
+    padding:14px 16px 12px; box-shadow:0 16px 48px rgba(0,0,0,0.55),
+    0 0 0 1px rgba(124,196,255,0.12); z-index:200; display:none;
+    animation:slideIn 0.18s ease-out; }
+  .finder.show { display:block; }
+  @keyframes slideIn {
+    from { opacity:0; transform:translateX(20px); }
+    to { opacity:1; transform:translateX(0); }
+  }
+  .finder .eyebrow { color:var(--accent); font-size:10px;
+    text-transform:uppercase; letter-spacing:0.1em; font-weight:600; }
+  .finder h1 { margin:4px 0 2px; font-size:18px; letter-spacing:-0.01em;
+    font-weight:600; line-height:1.2; color:var(--ink);}
+  .finder .meta { color:var(--mute); font-size:11px; margin-bottom:10px;
+    font-family:ui-monospace,Menlo,monospace; line-height:1.5; }
+  .finder .meta .b { color:var(--accent2); }
+  .finder .hint-title { color:var(--mute); font-size:9.5px;
+    text-transform:uppercase; letter-spacing:0.08em; margin-top:10px;
+    margin-bottom:3px; font-weight:500; }
+  .finder .hint-body { background:var(--panel2); border:1px solid var(--edge);
+    border-radius:6px; padding:7px 10px; font-size:11.5px; line-height:1.5;
+    color:var(--ink); max-height:90px; overflow:hidden; position:relative;
+    display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical;
+    word-break:break-word;}
+  .finder .footer { margin-top:10px; padding-top:8px; border-top:1px solid var(--edge);
+    color:var(--mute2); font-size:10.5px; display:flex; gap:10px; align-items:center;}
+  .finder .footer .kbd { font-size:9.5px;}
+  .finder .close { position:absolute; top:10px; right:12px; background:transparent;
+    border:0; color:var(--mute2); font-size:16px; cursor:pointer; line-height:1;
+    padding:2px 6px;}
+  .finder .close:hover { color:var(--ink);}
+  .kbd { display:inline-block; padding:1px 6px; border:1px solid var(--edge);
+    border-radius:3px; font-family:ui-monospace,monospace; font-size:10.5px; color:var(--mute);
+    background:var(--panel2);}
+  .hint-row { padding:4px 24px; color:var(--mute2); font-size:11px; border-bottom:1px solid var(--edge);}
+  .legend-row { display:flex; flex-wrap:wrap; gap:14px; padding:6px 24px; color:var(--mute);
+    font-size:11px; border-bottom:1px solid var(--edge); background:var(--panel);}
+  .legend-item { display:flex; align-items:center; gap:6px;}
+  .legend-item .dot { width:8px; height:8px; border-radius:50%; display:inline-block;}
+  .legend-item b { color:var(--ink); font-weight:500; }
+  .legend-item .ghost { color:var(--mute2);}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="status-dot"></span>
+  <h1>cc-dashboard</h1>
+  <div class="tabs">
+    <div class="tab active" data-view="live">Live <span class="badge" id="count-live">0</span></div>
+    <div class="tab" data-view="restore">Restore <span class="badge" id="count-restore">0</span></div>
+  </div>
+</header>
+<div class="hint-row">
+  <span class="kbd">↑</span> <span class="kbd">↓</span> navigate &nbsp;·&nbsp;
+  <span class="kbd">⏎</span> focus terminal &nbsp;·&nbsp;
+  <span class="kbd">space</span> focus top row &nbsp;·&nbsp;
+  <span class="kbd">r</span> refresh &nbsp;·&nbsp;
+  <span class="kbd">tab</span> switch view
+</div>
+<div class="legend-row" title="Priority order, most urgent first">
+  <span class="legend-item"><span class="dot" style="background:#ff7a93;box-shadow:0 0 8px #ff7a93"></span><b>permission</b> waiting on your approval</span>
+  <span class="legend-item"><span class="dot" style="background:#ffd866;box-shadow:0 0 6px #ffd866"></span><b>tool failed</b> needs intervention</span>
+  <span class="legend-item"><span class="dot" style="background:#7cc4ff;box-shadow:0 0 6px #7cc4ff"></span><b>asking</b> Claude has a question</span>
+  <span class="legend-item"><span class="dot" style="background:#5c6475"></span><b>idle</b> ready for next instruction</span>
+  <span class="legend-item"><span class="dot" style="background:#5ddc8a;opacity:0.7"></span><b>working</b> Claude running a tool</span>
+  <span class="legend-item ghost"><span class="dot" style="background:#242932"></span>clear — nothing pending</span>
+</div>
+
+<main>
+  <div class="list" id="list"></div>
+  <aside class="side" id="side">
+    <div class="empty">Select a row to see details</div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="finder" id="finder">
+  <button class="close" onclick="closeFinder()">×</button>
+  <div class="eyebrow">Find this window</div>
+  <h1 id="f-repo"></h1>
+  <div class="meta" id="f-meta"></div>
+  <div class="hint-title">Claude's last message</div>
+  <div class="hint-body" id="f-assistant"></div>
+  <div class="hint-title">Your last prompt</div>
+  <div class="hint-body" id="f-user"></div>
+  <div class="footer">
+    <span class="kbd">⌘Tab</span> → Ghostty
+    <span style="margin-left:auto">
+      <span class="kbd">esc</span> dismiss
+    </span>
+  </div>
+</div>
+
+<script>
+const state = {
+  view: 'live',
+  liveRows: [],
+  restoreRows: [],
+  selectedIndex: 0,
+  selectedKey: null,   // identity — survives reordering
+  lastPanelKey: '',
+  lastPanelSig: '',
+  panelReqId: 0,       // monotonic — for discarding stale /api/panel responses
+  finderReqId: 0,      // monotonic — for discarding stale finder panel fetches
+  rowElCache: new Map(),  // key → {el, sig}
+  lastView: '',
+};
+
+function rowSig(r) {
+  // Signature of fields that affect rendered output of a single row.
+  // Every field that buildRowHTML() reads must appear here or the DOM
+  // will go stale silently. Quantize last_activity to the minute so the
+  // "5s ago" label ticking doesn't trigger a repaint every 3s.
+  return [
+    r.event, r.priority, r.reason, r.last_user,
+    r.dirty, r.branch, r.pid, r.cwd, r.repo,
+    Math.floor((r.last_activity || 0) / 60000)
+  ].join('|');
+}
+
+function rowKey(r) {
+  return r.sessionId || r.cwd;
+}
+
+function fmtTime(ms) {
+  if (!ms) return '';
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return Math.floor(s) + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+function shortCwd(cwd) {
+  return cwd.replace(/^\/Users\/[^/]+\//, '~/');
+}
+function priClass(event) {
+  if (event === 'ASK') return 'ask';
+  if (event === 'PERMISSION_PENDING') return 'permission';
+  if (event === 'TOOL_FAILED') return 'failed';
+  if (event === 'WORKING') return 'working';
+  if (event === 'IDLE_AFTER_COMPLETE') return 'idle';
+  return 'clear';
+}
+
+async function refresh() {
+  try {
+    const [liveR, recR] = await Promise.all([
+      fetch('/api/live').then(r => r.json()),
+      fetch('/api/recent?days=14').then(r => r.json())
+    ]);
+    state.liveRows = liveR.sessions || [];
+    state.restoreRows = recR.repos || [];
+    document.getElementById('count-live').textContent = state.liveRows.length;
+    document.getElementById('count-restore').textContent = state.restoreRows.length;
+    const dot = document.getElementById('status-dot');
+    dot.style.background = 'var(--good)';
+    dot.title = 'ok — last refresh ' + new Date().toLocaleTimeString();
+    render();
+  } catch (e) {
+    console.error('[refresh]', e);
+    const dot = document.getElementById('status-dot');
+    dot.style.background = 'var(--bad)';
+    dot.title = 'refresh failed: ' + String(e);
+  }
+}
+
+function currentRows() {
+  return state.view === 'live' ? state.liveRows : state.restoreRows;
+}
+
+function buildRowHTML(r) {
+  return `
+    <div class="pri ${priClass(r.event)}"></div>
+    <div class="body">
+      <div class="title-line">
+        <span class="repo">${escapeHtml(r.repo || shortCwd(r.cwd))}</span>
+        ${r.branch ? `<span class="branch">${escapeHtml(r.branch)}</span>` : ''}
+        ${r.dirty ? `<span class="dirty">● ${r.dirty} uncommitted</span>` : ''}
+        <span class="evt-badge evt-${r.event}">${r.event.replace('_', ' ').toLowerCase()}</span>
+      </div>
+      ${r.reason ? `<div class="reason">${escapeHtml(r.reason)}</div>` : ''}
+      ${r.last_user ? `<div class="last-prompt">› ${escapeHtml(r.last_user.slice(0, 120))}</div>` : ''}
+    </div>
+    <div class="meta-right">
+      <span class="time">${fmtTime(r.last_activity)}</span>
+      ${r.pid ? `<span class="pid">pid ${r.pid}</span>` : ''}
+    </div>`;
+}
+
+function render(force) {
+  const rows = currentRows();
+  const list = document.getElementById('list');
+
+  // View switched — blow the cache so old rows don't linger.
+  // Also reset the selection key (it's in a different namespace now).
+  if (state.lastView !== state.view) {
+    state.rowElCache.clear();
+    list.innerHTML = '';
+    state.lastView = state.view;
+    state.selectedKey = null;
+  }
+
+  // Reconcile selection by IDENTITY, not index. If the previously selected
+  // row's key still exists, track it to its new position. Otherwise clamp.
+  if (state.selectedKey) {
+    const idx = rows.findIndex(r => rowKey(r) === state.selectedKey);
+    if (idx >= 0) {
+      state.selectedIndex = idx;
+    } else {
+      // Selected row disappeared; clamp to what's left
+      if (state.selectedIndex >= rows.length) state.selectedIndex = rows.length - 1;
+      if (state.selectedIndex < 0) state.selectedIndex = 0;
+      state.selectedKey = rows.length ? rowKey(rows[state.selectedIndex]) : null;
+    }
+  } else if (rows.length) {
+    state.selectedKey = rowKey(rows[state.selectedIndex] || rows[0]);
+    if (state.selectedIndex >= rows.length) state.selectedIndex = 0;
+  }
+
+  if (rows.length === 0) {
+    if (!list.querySelector('.empty')) {
+      list.innerHTML = `<div class="empty">${state.view === 'live' ? 'No live Claude Code sessions detected.' : 'No recent sessions in the last 14 days.'}</div>`;
+    }
+    document.getElementById('side').innerHTML = '<div class="empty">Select a row to see details</div>';
+    state.lastPanelKey = '';
+    state.rowElCache.clear();
+    return;
+  }
+
+  // Remove empty-state if it's there from a previous render
+  const empty = list.querySelector('.empty');
+  if (empty) empty.remove();
+
+  // Remove rows that are no longer in data
+  const liveKeys = new Set(rows.map(rowKey));
+  state.rowElCache.forEach((entry, key) => {
+    if (!liveKeys.has(key)) {
+      entry.el.remove();
+      state.rowElCache.delete(key);
+    }
+  });
+
+  // Upsert each row in order
+  rows.forEach((r, i) => {
+    const key = rowKey(r);
+    const sig = rowSig(r);
+    let entry = state.rowElCache.get(key);
+    if (!entry) {
+      const el = document.createElement('div');
+      el.className = 'row';
+      el.dataset.key = key;
+      el.addEventListener('click', () => {
+        // Re-fetch current rows — don't close over the stale array from
+        // creation time. Row order shifts on every poll tick.
+        const live = currentRows();
+        const idx = live.findIndex(x => rowKey(x) === key);
+        if (idx >= 0) {
+          state.selectedIndex = idx;
+          state.selectedKey = key;
+          closeFinder();  // dismiss any stale sticky before showing new one
+          render(true);
+        }
+      });
+      el.addEventListener('dblclick', () => {
+        const live = currentRows();
+        const idx = live.findIndex(x => rowKey(x) === key);
+        if (idx >= 0) {
+          state.selectedIndex = idx;
+          state.selectedKey = key;
+          doFocus();
+        }
+      });
+      el.innerHTML = buildRowHTML(r);
+      entry = { el, sig };
+      state.rowElCache.set(key, entry);
+    } else if (entry.sig !== sig) {
+      // Content changed — update only this row's inner HTML
+      entry.el.innerHTML = buildRowHTML(r);
+      entry.sig = sig;
+    }
+    // Selection class (cheap — toggle only)
+    entry.el.classList.toggle('selected', i === state.selectedIndex);
+
+    // Ensure DOM order matches rows[] order without unnecessary moves
+    const currentChild = list.children[i];
+    if (currentChild !== entry.el) {
+      list.insertBefore(entry.el, currentChild || null);
+    }
+  });
+
+  loadPanel();
+}
+
+async function loadPanel(force) {
+  const rows = currentRows();
+  const r = rows[state.selectedIndex];
+  const side = document.getElementById('side');
+  if (!r) {
+    side.innerHTML = '<div class="empty">Select a row</div>';
+    state.lastPanelKey = ''; state.lastPanelSig = '';
+    return;
+  }
+  const key = state.view + '::' + (r.sessionId || r.cwd);
+  const sig = rowSig(r);
+
+  // Skip if selection AND underlying data are both unchanged
+  if (!force && key === state.lastPanelKey && sig === state.lastPanelSig) return;
+
+  // Monotonic request id — discard any response that isn't the latest
+  const reqId = ++state.panelReqId;
+  state.lastPanelKey = key;
+  state.lastPanelSig = sig;
+
+  try {
+    const panel = await fetch(
+      `/api/panel?cwd=${encodeURIComponent(r.cwd)}&sid=${encodeURIComponent(r.sessionId || '')}`
+    ).then(x => {
+      if (!x.ok) throw new Error('HTTP ' + x.status);
+      return x.json();
+    });
+    if (reqId !== state.panelReqId) return;  // a newer request has started; bail
+    renderPanel(panel, r);
+  } catch (e) {
+    console.error('[loadPanel]', e);
+    if (reqId === state.panelReqId) {
+      side.innerHTML = `<div class="empty">Error loading panel: ${escapeHtml(String(e))}</div>`;
+      // Reset keys so the next render() will retry, otherwise the error sticks forever
+      state.lastPanelKey = ''; state.lastPanelSig = '';
+    }
+  }
+}
+
+function renderPanel(p, row) {
+  const side = document.getElementById('side');
+  const isLive = state.view === 'live';
+  const actionButtons = isLive
+    ? `<button class="btn primary" onclick="doFocus()">⏎ Focus terminal</button>`
+    : `<button class="btn primary" onclick="doResume()">⏎ Copy resume command</button>
+       <button class="btn" onclick="doFork()">⇧⏎ Copy fork summary</button>`;
+
+  side.innerHTML = `
+    <h2>${escapeHtml(p.repo)}</h2>
+    <div class="sub">${escapeHtml(shortCwd(p.cwd))}</div>
+
+    <div class="btn-row">${actionButtons}</div>
+
+    <h3>state</h3>
+    <dl class="kv">
+      <dt>event</dt><dd>${p.event}</dd>
+      <dt>branch</dt><dd>${p.git.branch || '—'}</dd>
+      <dt>uncommitted</dt><dd>${p.git.dirty || 0} files</dd>
+      <dt>last commit</dt><dd>${escapeHtml(p.git.last_commit || '—')}</dd>
+      <dt>sessionId</dt><dd>${escapeHtml(p.sessionId || '—')}</dd>
+      <dt>transcript</dt><dd>${p.transcript_found ? 'found' : 'missing'}</dd>
+    </dl>
+
+    ${p.reason ? `<h3>why it's here</h3><div style="color:var(--accent2)">${escapeHtml(p.reason)}</div>` : ''}
+
+    ${p.open_tool ? `<h3>open tool at session end</h3><div>▶ ${escapeHtml(p.open_tool.name || '')}</div>` : ''}
+
+    ${p.last_assistant ? `<h3>claude's last message</h3><pre>${escapeHtml(p.last_assistant.slice(0, 1500))}</pre>` : ''}
+
+    ${p.recent_prompts && p.recent_prompts.length ? `
+      <h3>your recent prompts (this repo)</h3>
+      <div>${p.recent_prompts.map(x => `<div class="prompt-li">› ${escapeHtml(x.display)}</div>`).join('')}</div>
+    ` : ''}
+
+    ${p.diff_summary ? `<h3>git diff stat</h3><pre>${escapeHtml(p.diff_summary)}</pre>` : ''}
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+async function doFocus() {
+  const row = currentRows()[state.selectedIndex];
+  if (!row) return;
+  toast('Focusing ' + row.repo + '…');
+  try {
+    const resp = await fetch('/api/focus', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cwd: row.cwd, sid: row.sessionId})
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({error: 'HTTP ' + resp.status}));
+      toast('⚠ Focus failed: ' + (err.error || resp.status));
+      console.error('[doFocus] server error', err);
+      openFinder(row);
+      return;
+    }
+    const r = await resp.json();
+    if (r.matched) {
+      toast('✓ Focused: ' + row.repo + ' (score ' + r.score + ')');
+    } else {
+      // Surface the real reason instead of the generic "no match".
+      const reason = r.reason || 'no_confident_match';
+      const humanReason = ({
+        'ghostty_activate_failed': 'Ghostty could not be activated',
+        'ghostty_activate_timeout': 'Ghostty activation timed out',
+        'ax_permission_denied': 'Accessibility permission needed (System Settings → Privacy → Accessibility)',
+        'osascript_timeout': 'System Events hung — try again',
+        'list_failed': 'Could not list Ghostty windows',
+        'no_confident_match': 'Window likely on another Mac space',
+      })[reason] || reason;
+      toast('⚠ ' + humanReason);
+      openFinder(row);
+    }
+  } catch (e) {
+    console.error('[doFocus]', e);
+    toast('Focus error: ' + e.message);
+    openFinder(row);
+  }
+}
+
+function openFinder(row) {
+  const reqId = ++state.finderReqId;
+  document.getElementById('f-repo').textContent = row.repo || row.cwd;
+  const parts = [];
+  if (row.branch) parts.push('⎇ ' + row.branch);
+  if (row.dirty) parts.push(row.dirty + ' uncommitted');
+  parts.push(shortCwd(row.cwd));
+  document.getElementById('f-meta').innerHTML = parts.map((p, i) =>
+    i === 0 ? `<span class="b">${escapeHtml(p)}</span>` : escapeHtml(p)
+  ).join('  ·  ');
+  // Prefill hint bodies from row data in case the fetch is slow
+  document.getElementById('f-assistant').textContent = '(loading…)';
+  document.getElementById('f-user').textContent = row.last_user || '(no recent prompt)';
+
+  fetch(`/api/panel?cwd=${encodeURIComponent(row.cwd)}&sid=${encodeURIComponent(row.sessionId || '')}`)
+    .then(x => {
+      if (!x.ok) throw new Error('HTTP ' + x.status);
+      return x.json();
+    })
+    .then(p => {
+      if (reqId !== state.finderReqId) return;  // a newer finder opened; don't clobber
+      document.getElementById('f-assistant').textContent =
+        (p.last_assistant || '(no Claude message yet)').slice(0, 600);
+      document.getElementById('f-user').textContent =
+        (p.last_user || row.last_user || '(no recent prompt)').slice(0, 400);
+    })
+    .catch(e => {
+      if (reqId !== state.finderReqId) return;
+      console.error('[openFinder]', e);
+      document.getElementById('f-assistant').textContent = '⚠ panel fetch failed: ' + e.message;
+    });
+  document.getElementById('finder').classList.add('show');
+}
+
+function closeFinder() {
+  document.getElementById('finder').classList.remove('show');
+}
+
+async function doResume() {
+  const row = currentRows()[state.selectedIndex];
+  if (!row) return;
+  const r = await fetch('/api/resume', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cwd: row.cwd, sid: row.sessionId})
+  }).then(x => x.json());
+  toast(r.copied_to_clipboard ? '✓ Command copied to clipboard' : 'Could not copy to clipboard');
+}
+
+async function doFork() {
+  const row = currentRows()[state.selectedIndex];
+  if (!row) return;
+  const r = await fetch('/api/fork', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cwd: row.cwd, sid: row.sessionId})
+  }).then(x => x.json());
+  toast(r.copied_to_clipboard ? '✓ Fork summary copied — paste into fresh claude' : 'Could not copy');
+}
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    state.view = t.dataset.view;
+    state.selectedIndex = 0;
+    render(true);
+  });
+});
+
+// Dismiss finder on backdrop click
+document.getElementById('finder').addEventListener('click', (e) => {
+  if (e.target.id === 'finder') closeFinder();
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  // Esc always closes the finder first
+  if (e.key === 'Escape') {
+    const f = document.getElementById('finder');
+    if (f.classList.contains('show')) { closeFinder(); e.preventDefault(); return; }
+  }
+  const rows = currentRows();
+  if (e.key === 'ArrowDown' || e.key === 'j') {
+    state.selectedIndex = Math.min(rows.length - 1, state.selectedIndex + 1);
+    state.selectedKey = rows[state.selectedIndex] ? rowKey(rows[state.selectedIndex]) : null;
+    render(true); e.preventDefault();
+  } else if (e.key === 'ArrowUp' || e.key === 'k') {
+    state.selectedIndex = Math.max(0, state.selectedIndex - 1);
+    state.selectedKey = rows[state.selectedIndex] ? rowKey(rows[state.selectedIndex]) : null;
+    render(true); e.preventDefault();
+  } else if (e.key === 'Enter') {
+    if (state.view === 'live') doFocus();
+    else doResume();
+    e.preventDefault();
+  } else if (e.key === ' ') {
+    state.selectedIndex = 0;
+    state.selectedKey = rows[0] ? rowKey(rows[0]) : null;
+    render(true);
+    if (state.view === 'live') doFocus();
+    e.preventDefault();
+  } else if (e.key === 'r') {
+    refresh();
+  } else if (e.key === 'Tab') {
+    const tabs = ['live', 'restore'];
+    const next = tabs[(tabs.indexOf(state.view) + 1) % tabs.length];
+    document.querySelector(`.tab[data-view="${next}"]`).click();
+    e.preventDefault();
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

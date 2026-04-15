@@ -44,11 +44,22 @@
   .pri.idle { background:var(--mute2); }
   .pri.clear { background:var(--edge); }
   .body { flex:1; min-width:0; }
-  .title-line { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
-  .repo { font-weight:600; color:var(--ink); font-size:13.5px;}
-  .branch { color:var(--mute); font-family:ui-monospace,Menlo,monospace; font-size:11.5px;}
-  .branch::before { content:"⎇ "; }
-  .dirty { color:var(--warn); font-size:11px; font-weight:500;}
+  /* Headline = the most-read text per row. For actionable events (ASK,
+     PERMISSION, TOOL_FAILED) this is the reason itself. For idle rows it's
+     the repo name. Either way, ink-white at 14px so the eye lands here first. */
+  .headline { color:var(--ink); font-size:14px; font-weight:600; line-height:1.35;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-0.005em;}
+  .headline.dim { opacity:0.78; font-weight:500; }
+  .row-meta { color:var(--mute); font-size:11.5px; margin-top:3px; line-height:1.5;
+    display:flex; align-items:center; gap:10px; flex-wrap:nowrap; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .row-meta .repo-chip { color:var(--ink); opacity:0.78; font-weight:500;
+    font-size:11.5px; }
+  .row-meta .branch { color:var(--mute); font-family:ui-monospace,Menlo,monospace; font-size:11px;}
+  .row-meta .branch::before { content:"⎇ "; }
+  .row-meta .dirty { color:var(--warn); font-size:11px; font-weight:500;}
+  .row-meta .last-user { color:var(--mute2); font-size:11px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0;}
   .evt-badge { padding:1px 7px; border-radius:4px; font-size:10px; font-weight:600;
     text-transform:uppercase; letter-spacing:0.03em; }
   .evt-ASK { background:rgba(124,196,255,0.15); color:var(--accent); }
@@ -57,11 +68,6 @@
   .evt-WORKING { background:rgba(140,148,166,0.12); color:var(--mute);}
   .evt-IDLE_AFTER_COMPLETE { background:rgba(93,220,138,0.12); color:var(--good);}
   .evt-CLEAR { background:var(--edge); color:var(--mute);}
-  .reason { color:var(--accent2); font-size:12px; margin-top:3px; line-height:1.45;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 70ch; }
-  .last-prompt { color:var(--mute); font-size:11.5px; margin-top:3px;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 80ch;
-    font-family: ui-monospace,Menlo,monospace;}
   .meta-right { display:flex; flex-direction:column; align-items:flex-end; gap:2px;
     font-size:11px; color:var(--mute); flex-shrink:0;}
   .time { color:var(--mute2); font-variant-numeric:tabular-nums;}
@@ -129,13 +135,27 @@
   .kbd { display:inline-block; padding:1px 6px; border:1px solid var(--edge);
     border-radius:3px; font-family:ui-monospace,monospace; font-size:10.5px; color:var(--mute);
     background:var(--panel2);}
-  .hint-row { padding:4px 24px; color:var(--mute2); font-size:11px; border-bottom:1px solid var(--edge);}
-  .legend-row { display:flex; flex-wrap:wrap; gap:14px; padding:6px 24px; color:var(--mute);
-    font-size:11px; border-bottom:1px solid var(--edge); background:var(--panel);}
-  .legend-item { display:flex; align-items:center; gap:6px;}
-  .legend-item .dot { width:8px; height:8px; border-radius:50%; display:inline-block;}
-  .legend-item b { color:var(--ink); font-weight:500; }
-  .legend-item .ghost { color:var(--mute2);}
+  /* Help overlay — shown on ? keystroke, hidden by default */
+  .help-overlay { position:fixed; inset:0; background:rgba(5,8,12,0.72);
+    backdrop-filter:blur(6px); display:none; align-items:center;
+    justify-content:center; z-index:300; }
+  .help-overlay.show { display:flex; animation:fadeIn 0.12s ease-out;}
+  .help-card { background:var(--panel); border:1px solid var(--edge);
+    border-radius:12px; padding:24px 28px; max-width:540px; width:90vw;
+    box-shadow:0 24px 80px rgba(0,0,0,0.5); position:relative; }
+  .help-card .close { position:absolute; top:12px; right:14px; background:transparent;
+    border:0; color:var(--mute); font-size:18px; cursor:pointer; line-height:1; padding:4px 8px;}
+  .help-card .close:hover { color:var(--ink);}
+  .help-section { margin-bottom:20px;}
+  .help-section:last-child { margin-bottom:0;}
+  .help-section h3 { margin:0 0 10px; font-size:10px; text-transform:uppercase;
+    letter-spacing:0.1em; color:var(--mute); font-weight:600;}
+  .help-section dl { display:grid; grid-template-columns: auto 1fr; gap:8px 16px;
+    margin:0; font-size:12px; align-items:center;}
+  .help-section dt { color:var(--ink); display:flex; align-items:center; gap:4px;}
+  .help-section dd { margin:0; color:var(--mute);}
+  .help-section dd b { color:var(--ink); font-weight:500;}
+  .help-section .dot.pri { width:10px; height:10px; border-radius:50%; display:inline-block;}
 </style>
 </head>
 <body>
@@ -148,21 +168,35 @@
     <div class="tab" data-view="restore">Restore <span class="badge" id="count-restore">0</span></div>
   </div>
 </header>
-<div class="hint-row">
-  <span class="kbd">↑</span> <span class="kbd">↓</span> navigate &nbsp;·&nbsp;
-  <span class="kbd">⏎</span> focus terminal &nbsp;·&nbsp;
-  <span class="kbd">i</span> open in IDE &nbsp;·&nbsp;
-  <span class="kbd">space</span> focus top row &nbsp;·&nbsp;
-  <span class="kbd">tab</span> switch view &nbsp;·&nbsp;
-  <span class="kbd">r</span> refresh
-</div>
-<div class="legend-row" title="Priority order, most urgent first">
-  <span class="legend-item"><span class="dot" style="background:#ff7a93;box-shadow:0 0 8px #ff7a93"></span><b>permission</b> waiting on your approval</span>
-  <span class="legend-item"><span class="dot" style="background:#ffd866;box-shadow:0 0 6px #ffd866"></span><b>tool failed</b> needs intervention</span>
-  <span class="legend-item"><span class="dot" style="background:#7cc4ff;box-shadow:0 0 6px #7cc4ff"></span><b>asking</b> Claude has a question</span>
-  <span class="legend-item"><span class="dot" style="background:#5c6475"></span><b>idle</b> ready for next instruction</span>
-  <span class="legend-item"><span class="dot" style="background:#5ddc8a;opacity:0.7"></span><b>working</b> Claude running a tool</span>
-  <span class="legend-item ghost"><span class="dot" style="background:#242932"></span>clear — nothing pending</span>
+<!-- Press ? to show help overlay -->
+<div class="help-overlay" id="help-overlay">
+  <div class="help-card">
+    <button class="close" onclick="closeHelp()">×</button>
+    <div class="help-section">
+      <h3>Keyboard</h3>
+      <dl>
+        <dt><span class="kbd">↑</span> <span class="kbd">↓</span> / <span class="kbd">j</span> <span class="kbd">k</span></dt><dd>navigate rows</dd>
+        <dt><span class="kbd">⏎</span></dt><dd>focus terminal (Live) · copy resume (Restore)</dd>
+        <dt><span class="kbd">i</span></dt><dd>open selected repo in IDE</dd>
+        <dt><span class="kbd">space</span></dt><dd>focus the top-priority row</dd>
+        <dt><span class="kbd">tab</span></dt><dd>toggle Live / Restore</dd>
+        <dt><span class="kbd">r</span></dt><dd>force refresh</dd>
+        <dt><span class="kbd">?</span></dt><dd>toggle this help</dd>
+        <dt><span class="kbd">esc</span></dt><dd>dismiss any overlay</dd>
+      </dl>
+    </div>
+    <div class="help-section">
+      <h3>Event colors</h3>
+      <dl class="legend-list">
+        <dt><span class="dot pri permission"></span></dt><dd><b>permission</b> — waiting on your approval</dd>
+        <dt><span class="dot pri failed"></span></dt><dd><b>tool failed</b> — needs intervention</dd>
+        <dt><span class="dot pri ask"></span></dt><dd><b>asking</b> — Claude has a question</dd>
+        <dt><span class="dot pri working"></span></dt><dd><b>working</b> — Claude is running a tool</dd>
+        <dt><span class="dot pri idle"></span></dt><dd><b>idle</b> — ready for next instruction</dd>
+        <dt><span class="dot pri clear"></span></dt><dd><b>clear</b> — nothing pending</dd>
+      </dl>
+    </div>
+  </div>
 </div>
 
 <main>
@@ -206,6 +240,15 @@ const state = {
   lastView: '',
   ide: 'IDE',          // detected IDE display name from /api/live
 };
+
+// Set the browser tab title to reflect how many live sessions need attention.
+// Visible in Split View, on a second monitor, and when the tab is backgrounded.
+// "Urgent" = permission pending, tool failed, or Claude asking a question.
+const URGENT_EVENTS = new Set(['PERMISSION_PENDING', 'TOOL_FAILED', 'ASK']);
+function updateDocumentTitle() {
+  const urgent = state.liveRows.filter(r => URGENT_EVENTS.has(r.event)).length;
+  document.title = urgent > 0 ? `(${urgent}!) cc-dashboard` : 'cc-dashboard';
+}
 
 function rowSig(r) {
   // Signature of fields that affect rendered output of a single row.
@@ -252,6 +295,7 @@ async function refresh() {
     state.liveRows = liveR.sessions || [];
     state.restoreRows = recR.repos || [];
     state.ide = liveR.ide || recR.ide || 'IDE';
+    updateDocumentTitle();
     document.getElementById('count-live').textContent = state.liveRows.length;
     document.getElementById('count-restore').textContent = state.restoreRows.length;
     const dot = document.getElementById('status-dot');
@@ -271,21 +315,38 @@ function currentRows() {
 }
 
 function buildRowHTML(r) {
+  // Headline rule: if Claude needs action and there's a meaningful reason,
+  // the reason IS the headline (what's being asked). Otherwise the repo
+  // name is the headline (what you're looking at). This flips the old
+  // hierarchy where repo always dominated.
+  const actionable = ['ASK', 'PERMISSION_PENDING', 'TOOL_FAILED'].includes(r.event);
+  const hasReason = r.reason && r.reason.trim().length > 0;
+  const reasonAsHeadline = actionable && hasReason;
+
+  const repoName = escapeHtml(r.repo || shortCwd(r.cwd));
+  const headline = reasonAsHeadline
+    ? `<div class="headline">${escapeHtml(r.reason)}</div>`
+    : `<div class="headline dim">${repoName}</div>`;
+
+  const metaParts = [];
+  if (reasonAsHeadline) {
+    metaParts.push(`<span class="repo-chip">${repoName}</span>`);
+  }
+  if (r.branch) metaParts.push(`<span class="branch">${escapeHtml(r.branch)}</span>`);
+  if (r.dirty) metaParts.push(`<span class="dirty">● ${r.dirty}</span>`);
+  metaParts.push(`<span class="evt-badge evt-${r.event}">${r.event.replace('_', ' ').toLowerCase()}</span>`);
+  if (!reasonAsHeadline && r.last_user) {
+    metaParts.push(`<span class="last-user">› ${escapeHtml(r.last_user.slice(0, 120))}</span>`);
+  }
+
   return `
     <div class="pri ${priClass(r.event)}"></div>
     <div class="body">
-      <div class="title-line">
-        <span class="repo">${escapeHtml(r.repo || shortCwd(r.cwd))}</span>
-        ${r.branch ? `<span class="branch">${escapeHtml(r.branch)}</span>` : ''}
-        ${r.dirty ? `<span class="dirty">● ${r.dirty} uncommitted</span>` : ''}
-        <span class="evt-badge evt-${r.event}">${r.event.replace('_', ' ').toLowerCase()}</span>
-      </div>
-      ${r.reason ? `<div class="reason">${escapeHtml(r.reason)}</div>` : ''}
-      ${r.last_user ? `<div class="last-prompt">› ${escapeHtml(r.last_user.slice(0, 120))}</div>` : ''}
+      ${headline}
+      <div class="row-meta">${metaParts.join('')}</div>
     </div>
     <div class="meta-right">
       <span class="time">${fmtTime(r.last_activity)}</span>
-      ${r.pid ? `<span class="pid">pid ${r.pid}</span>` : ''}
     </div>`;
 }
 
@@ -625,12 +686,28 @@ document.getElementById('finder').addEventListener('click', (e) => {
   if (e.target.id === 'finder') closeFinder();
 });
 
+// Help overlay toggling
+function openHelp() { document.getElementById('help-overlay').classList.add('show'); }
+function closeHelp() { document.getElementById('help-overlay').classList.remove('show'); }
+document.getElementById('help-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'help-overlay') closeHelp();
+});
+
 // Keyboard
 document.addEventListener('keydown', (e) => {
-  // Esc always closes the finder first
+  // Esc closes any overlay (help → finder → nothing)
   if (e.key === 'Escape') {
+    const h = document.getElementById('help-overlay');
+    if (h.classList.contains('show')) { closeHelp(); e.preventDefault(); return; }
     const f = document.getElementById('finder');
     if (f.classList.contains('show')) { closeFinder(); e.preventDefault(); return; }
+  }
+  // ? opens help
+  if (e.key === '?') {
+    const h = document.getElementById('help-overlay');
+    h.classList.contains('show') ? closeHelp() : openHelp();
+    e.preventDefault();
+    return;
   }
   const rows = currentRows();
   if (e.key === 'ArrowDown' || e.key === 'j') {

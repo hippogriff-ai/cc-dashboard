@@ -151,9 +151,10 @@
 <div class="hint-row">
   <span class="kbd">↑</span> <span class="kbd">↓</span> navigate &nbsp;·&nbsp;
   <span class="kbd">⏎</span> focus terminal &nbsp;·&nbsp;
+  <span class="kbd">i</span> open in IDE &nbsp;·&nbsp;
   <span class="kbd">space</span> focus top row &nbsp;·&nbsp;
-  <span class="kbd">r</span> refresh &nbsp;·&nbsp;
-  <span class="kbd">tab</span> switch view
+  <span class="kbd">tab</span> switch view &nbsp;·&nbsp;
+  <span class="kbd">r</span> refresh
 </div>
 <div class="legend-row" title="Priority order, most urgent first">
   <span class="legend-item"><span class="dot" style="background:#ff7a93;box-shadow:0 0 8px #ff7a93"></span><b>permission</b> waiting on your approval</span>
@@ -203,6 +204,7 @@ const state = {
   finderReqId: 0,      // monotonic — for discarding stale finder panel fetches
   rowElCache: new Map(),  // key → {el, sig}
   lastView: '',
+  ide: 'IDE',          // detected IDE display name from /api/live
 };
 
 function rowSig(r) {
@@ -249,6 +251,7 @@ async function refresh() {
     ]);
     state.liveRows = liveR.sessions || [];
     state.restoreRows = recR.repos || [];
+    state.ide = liveR.ide || recR.ide || 'IDE';
     document.getElementById('count-live').textContent = state.liveRows.length;
     document.getElementById('count-restore').textContent = state.restoreRows.length;
     const dot = document.getElementById('status-dot');
@@ -432,10 +435,13 @@ async function loadPanel(force) {
 function renderPanel(p, row) {
   const side = document.getElementById('side');
   const isLive = state.view === 'live';
+  const ideLabel = escapeHtml(state.ide || 'IDE');
   const actionButtons = isLive
-    ? `<button class="btn primary" onclick="doFocus()">⏎ Focus terminal</button>`
+    ? `<button class="btn primary" onclick="doFocus()">⏎ Focus terminal</button>
+       <button class="btn" onclick="doOpenIDE()" title="Open this repo in ${ideLabel}">i · Open in ${ideLabel}</button>`
     : `<button class="btn primary" onclick="doResume()">⏎ Copy resume command</button>
-       <button class="btn" onclick="doFork()">⇧⏎ Copy fork summary</button>`;
+       <button class="btn" onclick="doFork()">⇧⏎ Copy fork summary</button>
+       <button class="btn" onclick="doOpenIDE()" title="Open this repo in ${ideLabel}">i · Open in ${ideLabel}</button>`;
 
   side.innerHTML = `
     <h2>${escapeHtml(p.repo)}</h2>
@@ -580,6 +586,29 @@ async function doFork() {
   toast(r.copied_to_clipboard ? '✓ Fork summary copied — paste into fresh claude' : 'Could not copy');
 }
 
+async function doOpenIDE() {
+  const row = currentRows()[state.selectedIndex];
+  if (!row) return;
+  toast('Opening ' + row.repo + ' in ' + state.ide + '…');
+  try {
+    const resp = await fetch('/api/open-ide', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cwd: row.cwd})
+    });
+    const r = await resp.json();
+    if (r.ok) {
+      toast('✓ Opened in ' + r.ide);
+    } else {
+      toast('⚠ ' + (r.error || 'open failed') + (r.detail ? ': ' + r.detail : ''));
+      console.error('[doOpenIDE]', r);
+    }
+  } catch (e) {
+    toast('IDE open error: ' + e.message);
+    console.error('[doOpenIDE]', e);
+  }
+}
+
 // Tab switching
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
@@ -621,6 +650,9 @@ document.addEventListener('keydown', (e) => {
     state.selectedKey = rows[0] ? rowKey(rows[0]) : null;
     render(true);
     if (state.view === 'live') doFocus();
+    e.preventDefault();
+  } else if (e.key === 'i' || e.key === 'I') {
+    doOpenIDE();
     e.preventDefault();
   } else if (e.key === 'r') {
     refresh();

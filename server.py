@@ -698,6 +698,63 @@ def resume_command(cwd: str, sid: str | None) -> dict:
     return {"command": cmd, "copied_to_clipboard": copied}
 
 
+_IDE_PRIORITY = [
+    # (app-bundle name in /Applications, display name)
+    ("Cursor", "Cursor"),
+    ("Visual Studio Code", "VS Code"),
+    ("Zed", "Zed"),
+    ("Windsurf", "Windsurf"),
+    ("Sublime Text", "Sublime Text"),
+    ("WebStorm", "WebStorm"),
+    ("PyCharm", "PyCharm"),
+    ("GoLand", "GoLand"),
+    ("Rider", "Rider"),
+    ("CLion", "CLion"),
+    ("Xcode", "Xcode"),
+]
+
+
+def _detect_ide() -> tuple[str, str]:
+    """Return (app_bundle_name, display_name) of the preferred IDE.
+    Honors CC_DASH_IDE env var for override, otherwise walks _IDE_PRIORITY
+    checking /Applications for each. Falls back to ("", "Finder") which
+    means `open` with no -a argument (opens the folder in Finder).
+    """
+    override = os.environ.get("CC_DASH_IDE", "").strip()
+    if override:
+        return (override, override)
+    apps_dir = Path("/Applications")
+    for bundle, display in _IDE_PRIORITY:
+        if (apps_dir / f"{bundle}.app").exists():
+            return (bundle, display)
+    return ("", "Finder")
+
+
+def open_in_ide(cwd: str) -> dict:
+    """Launch the detected IDE pointed at cwd."""
+    if not cwd or not Path(cwd).is_dir():
+        return {"ok": False, "error": "cwd_not_a_directory", "cwd": cwd}
+    bundle, display = _detect_ide()
+    cmd = ["open"]
+    if bundle:
+        cmd += ["-a", bundle]
+    cmd += [cwd]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "open_timeout", "ide": display}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "ide": display}
+    if r.returncode != 0:
+        return {
+            "ok": False,
+            "error": "open_failed",
+            "ide": display,
+            "detail": (r.stderr or "").strip()[:200],
+        }
+    return {"ok": True, "ide": display, "cwd": cwd}
+
+
 def fork_summary(cwd: str, sid: str | None) -> dict:
     """Build a markdown summary to paste into a fresh claude session."""
     panel = build_panel(cwd, sid)
@@ -760,10 +817,20 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/" or path == "/index.html":
                 self._file(SCRIPT_DIR / "index.html", "text/html; charset=utf-8")
             elif path == "/api/live":
-                self._json(200, {"sessions": load_live_sessions(), "ts": time.time()})
+                _, ide_name = _detect_ide()
+                self._json(200, {
+                    "sessions": load_live_sessions(),
+                    "ide": ide_name,
+                    "ts": time.time(),
+                })
             elif path == "/api/recent":
                 days = int(qs.get("days", ["14"])[0])
-                self._json(200, {"repos": load_recent_by_repo(days), "ts": time.time()})
+                _, ide_name = _detect_ide()
+                self._json(200, {
+                    "repos": load_recent_by_repo(days),
+                    "ide": ide_name,
+                    "ts": time.time(),
+                })
             elif path == "/api/panel":
                 cwd = qs.get("cwd", [""])[0]
                 sid = qs.get("sid", [""])[0] or None
@@ -798,6 +865,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, resume_command(body.get("cwd", ""), body.get("sid")))
             elif path == "/api/fork":
                 self._json(200, fork_summary(body.get("cwd", ""), body.get("sid")))
+            elif path == "/api/open-ide":
+                cwd = body.get("cwd", "")
+                if not cwd:
+                    self._json(400, {"error": "cwd required"}); return
+                self._json(200, open_in_ide(cwd))
             else:
                 self._json(404, {"error": "not found"})
         except Exception as e:

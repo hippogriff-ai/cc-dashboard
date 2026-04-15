@@ -145,86 +145,107 @@ def extract_text(msg_content) -> str:
 
 
 def classify(transcript: list[dict], alive: bool) -> dict:
-    """Return {event, priority, reason, last_user, last_assistant, open_tool}."""
+    """Return {event, priority, reason, last_user, last_assistant, open_tool}.
+
+    Classification rule: the event reflects the state of the LAST turn only,
+    not cumulative history. A tool error from 20 turns ago that Claude has
+    since responded to is not 'failing' — it's resolved. Only classify as
+    TOOL_FAILED if the very last turn is an unresolved error with no
+    assistant response after it.
+    """
     turns = last_turns(transcript, k=20)
     last_user_text = None
     last_assistant_text = None
     open_tool = None
-    failed_tool = None
 
-    # Walk main thread for context
+    # First pass: capture the most recent user/assistant text for the side
+    # panel display. These are historical context, not classification inputs.
     for t in turns:
         m = t.get("message", {})
         role = m.get("role")
         content = m.get("content")
         if role == "user":
-            # user content may be a list with tool_result blocks — skip those
             if isinstance(content, str):
                 last_user_text = content
             elif isinstance(content, list):
-                txts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                txts = [b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text"]
                 if txts:
                     last_user_text = "\n".join(txts)
-                # detect tool_result with is_error
-                for b in content:
-                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
-                        res = b.get("content", "")
-                        if isinstance(res, list):
-                            res = " ".join(x.get("text", "") for x in res if isinstance(x, dict))
-                        failed_tool = str(res)[:200]
         elif role == "assistant":
-            last_assistant_text = extract_text(content)
-            # Track open tool_use (no matching tool_result after)
-            if isinstance(content, list):
-                for b in content:
-                    if isinstance(b, dict) and b.get("type") == "tool_use":
-                        open_tool = {"name": b.get("name"), "id": b.get("id")}
+            text = extract_text(content)
+            if text:
+                last_assistant_text = text
 
-    # If the last turn is an assistant with tool_use, session is WORKING
-    # If last turn is an assistant with text ending in a question, it's ASK
+    # Default: nothing pending
     event = "CLEAR"
     reason = ""
     priority = 99
-    if turns:
-        last = turns[-1]
-        m = last.get("message", {})
-        role = m.get("role")
-        content = m.get("content")
+    if not turns:
+        return {
+            "event": event, "reason": reason, "priority": priority,
+            "last_user": "", "last_assistant": "", "open_tool": None,
+        }
 
-        if role == "assistant":
-            has_open_tool = False
-            text_parts = []
-            if isinstance(content, list):
-                for b in content:
-                    if isinstance(b, dict):
-                        if b.get("type") == "tool_use":
-                            has_open_tool = True
-                        elif b.get("type") == "text":
-                            text_parts.append(b.get("text", ""))
-            elif isinstance(content, str):
-                text_parts.append(content)
-            text = "\n".join(text_parts).strip()
+    # Classify based on the LAST turn only.
+    last = turns[-1]
+    m = last.get("message", {}) if isinstance(last.get("message"), dict) else {}
+    role = m.get("role")
+    content = m.get("content")
 
-            if has_open_tool and alive:
-                event = "WORKING"
-                reason = f"running {open_tool['name'] if open_tool else 'tool'}"
-                priority = 90
-            elif text and text.rstrip().endswith("?"):
-                event = "ASK"
-                # Extract the question (last sentence ending with ?)
-                q = text.strip().split("\n")[-1]
-                reason = q[:180]
-                priority = 20
-            elif failed_tool:
-                event = "TOOL_FAILED"
-                reason = f"tool error: {failed_tool[:100]}"
-                priority = 10
-            else:
-                event = "IDLE_AFTER_COMPLETE"
-                reason = "ready for next instruction"
-                priority = 40
-        elif role == "user":
-            # user spoke last — claude hasn't responded yet (or it's mid-turn)
+    if role == "assistant":
+        # Walk the last assistant content for open tool_use + text
+        has_open_tool = False
+        text_parts: list[str] = []
+        if isinstance(content, list):
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use":
+                    has_open_tool = True
+                    open_tool = {"name": b.get("name"), "id": b.get("id")}
+                elif b.get("type") == "text":
+                    text_parts.append(b.get("text", ""))
+        elif isinstance(content, str):
+            text_parts.append(content)
+        text = "\n".join(text_parts).strip()
+
+        if has_open_tool and alive:
+            event = "WORKING"
+            reason = f"running {open_tool['name'] if open_tool else 'tool'}"
+            priority = 90
+        elif text and text.rstrip().endswith("?"):
+            event = "ASK"
+            reason = text.strip().split("\n")[-1][:180]
+            priority = 20
+        else:
+            # Last turn is an assistant message — even if a historical
+            # tool error exists in earlier turns, the assistant has
+            # moved past it. This session is idle waiting for the user.
+            event = "IDLE_AFTER_COMPLETE"
+            reason = "ready for next instruction"
+            priority = 40
+
+    elif role == "user":
+        # Last turn is a user turn. Two sub-cases:
+        # (a) it's a real user prompt → claude is processing
+        # (b) it's a tool_result with is_error and claude hasn't responded
+        is_error_result = False
+        error_detail = ""
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                    is_error_result = True
+                    res = b.get("content", "")
+                    if isinstance(res, list):
+                        res = " ".join(x.get("text", "") for x in res if isinstance(x, dict))
+                    error_detail = str(res)[:200]
+                    break
+        if is_error_result:
+            event = "TOOL_FAILED"
+            reason = f"tool error: {error_detail[:100]}"
+            priority = 10
+        else:
             event = "WORKING" if alive else "CLEAR"
             reason = "processing..."
             priority = 85
@@ -261,6 +282,16 @@ def load_live_sessions() -> list[dict]:
         meta = classify(transcript, alive=True)
         gi = git_info(cwd)
         tp_mtime = tp.stat().st_mtime if tp else (started / 1000)
+        # Staleness decay: events lose urgency over time. A TOOL_FAILED
+        # from 9 hours ago should not rank above a fresh IDLE. After 30
+        # minutes of no activity we add a decay penalty to priority (higher
+        # number = less urgent). Fresh sessions (< 5 min) are untouched.
+        age_sec = max(0.0, time.time() - tp_mtime)
+        decay = 0
+        if age_sec > 300:  # 5 min grace period
+            # Linear decay: +10 priority per hour after the grace period,
+            # capped at 60 so stale urgent events still rank above CLEAR.
+            decay = min(60, int((age_sec - 300) / 360))  # 360s = 10pt/hr
         out.append({
             "pid": pid,
             "sessionId": sid,
@@ -270,8 +301,11 @@ def load_live_sessions() -> list[dict]:
             "dirty": gi["dirty"],
             "started_at": started,
             "last_activity": tp_mtime * 1000,
+            "age_sec": int(age_sec),
+            "stale_decay": decay,
             "transcript_found": tp is not None,
             **meta,
+            "priority": meta["priority"] + decay,
         })
     # Sort by (priority asc, last_activity desc). Lower priority number = more urgent.
     out.sort(key=lambda s: (s["priority"], -s["last_activity"]))

@@ -56,6 +56,14 @@ final class BackendController: ObservableObject {
         let p = Process()
         p.executableURL = url
         p.arguments = ["--port", "0"]
+        // Declare the parent-death-pipe contract explicitly. The backend only
+        // engages its stdin-EOF watchdog when this env var is set — required
+        // because other spawn paths (`bun test`, `bun run`) leave stdin as
+        // /dev/null, which would EOF immediately and kill the server before
+        // any test connects. See server.ts watchdog gating.
+        var env = ProcessInfo.processInfo.environment
+        env["CC_DASHBOARD_PARENT_PIPE"] = "1"
+        p.environment = env
 
         // Parent-death detection: assign a Pipe to the child's stdin and never
         // write to it. We hold the write-end alive for the lifetime of this

@@ -235,10 +235,15 @@ process.on("SIGTERM", (): void => {
 //    never writes to it; it holds the write-end alive for its own lifetime.
 //    When the parent dies by any cause — graceful Cmd-Q, SIGKILL, OOM,
 //    crash — the kernel closes its FDs and our stdin gets EOF. Fires
-//    immediately, no polling, no event-loop dependency. Skipped when stdin
-//    is a TTY (manual `bun src/server.ts` dev sessions): in that mode stdin
-//    is bound to the terminal, not the parent process, and would EOF on
-//    Ctrl-D rather than parent death.
+//    immediately, no polling, no event-loop dependency. Gated on the
+//    explicit CC_DASHBOARD_PARENT_PIPE env var that the Swift parent sets
+//    to declare the contract — required because other spawn paths (`bun
+//    test`, `bun run`, manual `bun src/server.ts`) leave stdin as
+//    /dev/null or a TTY, both of which would mis-fire the watchdog (the
+//    former EOFs immediately, killing the server before tests connect;
+//    the latter EOFs on Ctrl-D, killing dev sessions on accidental keys).
+//    The env-var contract makes the dependency explicit instead of
+//    heuristic.
 // 2. Ppid poll (fallback). On macOS the kernel reparents orphans to launchd
 //    (PID 1), so a `getppid()` change is a reliable death signal. Catches
 //    the rare case where stdin is closed by the parent for an unrelated
@@ -260,7 +265,7 @@ function exitOnParentDeath(trigger: string, extra?: Record<string, unknown>): vo
   process.exit(0);
 }
 
-if (!process.stdin.isTTY) {
+if (process.env.CC_DASHBOARD_PARENT_PIPE === "1") {
   process.stdin.on("end", (): void => exitOnParentDeath("stdin EOF"));
   process.stdin.on("close", (): void => exitOnParentDeath("stdin close"));
   // Without resume() the stream stays paused and 'end' / 'close' never fire.

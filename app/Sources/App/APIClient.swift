@@ -370,16 +370,14 @@ actor APIClient {
 
     /// Per-request timeout overrides. Polls (`/api/health`, `/api/live`,
     /// `/api/recent`) need a tight 5s window so a hung backend surfaces fast.
-    /// Action endpoints that invoke osascript (`/api/focus` activates Ghostty,
-    /// enumerates AX windows, and AXRaises — Loop 39 confirmed real-world
-    /// runs hit 20+ seconds when Ghostty has many windows or one is on
-    /// another macOS space) need longer or they'll time out before the
-    /// raise completes — the user sees an error toast and then the window
-    /// raises 15 seconds later, which is the worst possible UX. 30s is
-    /// conservative against the observed 20s tail. Loop 39.
+    /// Action endpoints that shell to other apps (resume, fork, open-ide)
+    /// need longer or they'll time out before the action completes; 30s is
+    /// conservative against the observed tail. (`/api/focus` was previously
+    /// in this list but was moved into the Swift app process — see
+    /// `GhosttyFocus.swift` — so it's no longer an HTTP path.)
     private static func timeout(for path: String) -> TimeInterval {
         switch path {
-        case "/api/focus", "/api/resume", "/api/fork", "/api/open-ide":
+        case "/api/resume", "/api/fork", "/api/open-ide":
             return 30
         default:
             return 5
@@ -452,10 +450,6 @@ actor APIClient {
 
     func decisions(cwd: String) async throws -> DecisionsResponse {
         try await get("/api/decisions", query: ["cwd": cwd])
-    }
-
-    func focus(cwd: String, sid: String?) async throws -> FocusResult {
-        try await post("/api/focus", body: cwdSid(cwd, sid))
     }
 
     func resume(cwd: String, sid: String?) async throws -> ResumeResult {

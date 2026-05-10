@@ -7,7 +7,6 @@ import { buildPanel } from "./claude/panel.ts";
 import { buildSessionDetail } from "./claude/sessionDetail.ts";
 import { findTranscript, readJsonlTail } from "./claude/transcript.ts";
 import { classify } from "./claude/classify.ts";
-import { focusGhostty } from "./ghostty/focus.ts";
 import { resumeCommand } from "./actions/resume.ts";
 import { forkSummary } from "./actions/fork.ts";
 import { openInIde } from "./actions/openIde.ts";
@@ -165,12 +164,6 @@ try {
             } catch {
               return err(400, "malformed JSON body");
             }
-          }
-          if (p === "/api/focus") {
-            const cwd = asString(body.cwd);
-            const sid = asStringOrNull(body.sid);
-            if (!cwd) return err(400, "cwd required");
-            return ok(await focusGhostty(cwd, sid));
           }
           if (p === "/api/resume") {
             const cwd = asString(body.cwd);

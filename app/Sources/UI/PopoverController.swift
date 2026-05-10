@@ -318,13 +318,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     }
 
     private func focusViaGhostty(cwd: String, sid: String?) {
-        guard let client = store.apiClient else {
-            Self.logger.error("focus skipped: no apiClient attached")
-            popoverViewModel.showError("Backend not ready — try again in a moment", kind: .warning)
-            return
-        }
         // In-flight indicator. Persistent (`after: 0`) so it doesn't auto-
-        // dismiss mid-osascript. Loop 39 found real-world Ghostty raises can
+        // dismiss mid-AppleScript. Loop 39 found real-world Ghostty raises can
         // take 5–20s when the target window is on another macOS space. The
         // success branch dismisses this banner once the window is up; the
         // error / no-match branches replace it via `showError`.
@@ -335,50 +330,50 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         // clobber their banner."
         let pendingId = popoverViewModel.lastError?.id
         Task { @MainActor in
-            do {
-                let result = try await client.focus(cwd: cwd, sid: sid)
-                if result.matched {
-                    if popoverViewModel.lastError?.id == pendingId {
-                        popoverViewModel.dismissError()
-                    }
-                } else {
-                    let reason = result.reason ?? "none"
-                    Self.logger.error("focus matcher returned no window cwd=\(cwd, privacy: .public) sid=\(sid ?? "nil", privacy: .public) reason=\(reason, privacy: .public)")
-                    // Translate the backend's machine-readable `reason` codes
-                    // into actionable user messages. The most important one
-                    // to disambiguate is `ax_permission_denied` — a generic
-                    // "no match" toast is wrong (it implies the matcher ran
-                    // and failed; in fact, AX never let us enumerate windows
-                    // at all). User needs to grant Accessibility access in
-                    // System Settings; the `no_confident_match` case is the
-                    // matcher genuinely not finding the window.
-                    let message: String
-                    let kind: PopoverError.Kind
-                    switch reason {
-                    case "ax_permission_denied":
-                        message = "Grant Accessibility to cc-dashboard in System Settings → Privacy"
-                        kind = .error
-                    case "ghostty_not_running":
-                        message = "Ghostty is not running"
-                        kind = .warning
-                    case "osascript_unavailable", "osascript_spawn_failed":
-                        message = "Couldn't run AppleScript (osascript unavailable)"
-                        kind = .error
-                    case "osascript_timeout":
-                        message = "Ghostty took too long to respond — try again"
-                        kind = .warning
-                    case "no_confident_match", "none":
-                        message = "No terminal window matched (window may be on another Space)"
-                        kind = .warning
-                    default:
-                        message = "Focus failed: \(reason)"
-                        kind = .warning
-                    }
-                    popoverViewModel.showError(message, kind: kind, after: 8)
+            // GhosttyFocus runs the AppleScript in-process so the user's
+            // Accessibility grant on cc-dashboard.app actually applies — see
+            // GhosttyFocus.swift for the rationale. Non-throwing: failures
+            // come back as a `FocusResult` with `matched: false` and a
+            // structured reason, never as a Swift error.
+            let result = await GhosttyFocus.focus(cwd: cwd, sid: sid)
+            if result.matched {
+                if popoverViewModel.lastError?.id == pendingId {
+                    popoverViewModel.dismissError()
                 }
-            } catch {
-                Self.logger.error("focus failed cwd=\(cwd, privacy: .public) error=\(String(reflecting: error), privacy: .public)")
-                popoverViewModel.showError("Couldn't focus terminal", kind: .error)
+            } else {
+                let reason = result.reason ?? "none"
+                Self.logger.error("focus matcher returned no window cwd=\(cwd, privacy: .public) sid=\(sid ?? "nil", privacy: .public) reason=\(reason, privacy: .public)")
+                // Translate the matcher's machine-readable `reason` codes
+                // into actionable user messages. The most important one
+                // to disambiguate is `ax_permission_denied` — a generic
+                // "no match" toast is wrong (it implies the matcher ran
+                // and failed; in fact, AX never let us enumerate windows
+                // at all). User needs to grant Accessibility access in
+                // System Settings; the `no_confident_match` case is the
+                // matcher genuinely not finding the window.
+                let message: String
+                let kind: PopoverError.Kind
+                switch reason {
+                case "ax_permission_denied":
+                    message = "Grant Accessibility to cc-dashboard in System Settings → Privacy"
+                    kind = .error
+                case "ghostty_not_running":
+                    message = "Ghostty is not running"
+                    kind = .warning
+                case "ghostty_activate_failed":
+                    message = "Couldn't activate Ghostty"
+                    kind = .error
+                case "list_failed":
+                    message = "Couldn't list Ghostty windows"
+                    kind = .error
+                case "no_confident_match", "none":
+                    message = "No terminal window matched (window may be on another Space)"
+                    kind = .warning
+                default:
+                    message = "Focus failed: \(reason)"
+                    kind = .warning
+                }
+                popoverViewModel.showError(message, kind: kind, after: 8)
             }
         }
     }

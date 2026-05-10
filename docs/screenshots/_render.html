@@ -1,0 +1,181 @@
+<!doctype html>
+<!--
+  Headless-render entry point for the README screenshots.
+  Loads the JSX prototypes from `docs/ux-design/` and renders a single popover
+  in one of five configurations chosen by the URL hash:
+      _render.html#tab=Live
+      _render.html#tab=Restore
+      _render.html#tab=Live&detail=1
+      _render.html#tab=Live&nav=1
+      _render.html#tab=Settings
+
+  Companion to scripts/capture-screenshots.sh which drives a headless
+  browser to capture each variant. Note: docs/ux-design/ is gitignored, so
+  this page only works locally for the project owner — the rendered PNGs
+  themselves are what ship.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>cc-dash render</title>
+  <link rel="stylesheet" href="../ux-design/styles.css" />
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: linear-gradient(180deg, #2c2a36 0%, #1a1a1c 100%);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+    #root { display: inline-block; }
+    /* Override: headless Chromium's grid auto-placement treats the
+       position:absolute .urgency-tick as occupying column 1, leaving the
+       wrong column for the main content. Other browsers skip absolute
+       children. Pin explicit grid-column so the row renders correctly here. */
+    .session-row > .session-row-main { grid-column: 2; min-width: 0; }
+    .session-row > .session-row-time { grid-column: 3; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+
+  <script type="text/babel" src="../ux-design/icons.jsx"></script>
+  <script type="text/babel" src="../ux-design/data.jsx"></script>
+  <script type="text/babel" src="../ux-design/components.jsx"></script>
+  <script type="text/babel" src="../ux-design/screens.jsx"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // LivePopover is a copy of the one in `docs/ux-design/app.jsx`. Inlined
+    // here because that file's bottom-of-script render pulls in the full
+    // design-canvas with multiple artboards, and we just want one popover.
+    const LivePopover = ({ initialTab = "Live", initialDetail = null, navMode = false, quietInit = false, sessions, restoreSessions }) => {
+      const [tab, setTab] = useState(initialTab);
+      const [focusedId, setFocusedId] = useState(sessions[0]?.id);
+      const [openSession, setOpenSession] = useState(initialDetail);
+      const [restoreSel, setRestoreSel] = useState(restoreSessions[0]?.id);
+      const [quiet, setQuiet] = useState(quietInit);
+
+      if (openSession) {
+        return (
+          <div className="popover popover-detail">
+            <SessionDetail
+              session={sessions.find((s) => s.id === openSession.id) || openSession}
+              onBack={() => setOpenSession(null)}
+            />
+          </div>
+        );
+      }
+
+      const attentionCount = sessions.filter(
+        (s) => s.state === "permission-pending" || s.state === "tool-failed" || s.state === "ask"
+      ).length;
+
+      return (
+        <div className="popover popover-tall" style={{ position: "relative" }}>
+          <PopHeader
+            count={sessions.length}
+            attentionCount={attentionCount}
+            quiet={quiet}
+            onQuietToggle={() => setQuiet(!quiet)}
+          />
+          <TabBar tabs={["Live", "Restore", "Settings"]} active={tab} onChange={setTab} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+            {tab === "Live" && (
+              <LiveTab
+                sessions={sessions}
+                focusedId={focusedId}
+                onFocusChange={setFocusedId}
+                onOpenDetail={setOpenSession}
+                navMode={navMode}
+                quiet={quiet}
+              />
+            )}
+            {tab === "Restore" && (
+              <RestoreTab
+                sessions={restoreSessions}
+                selectedId={restoreSel}
+                onSelect={setRestoreSel}
+              />
+            )}
+            {tab === "Settings" && <SettingsTab />}
+          </div>
+          {tab === "Live" && (
+            <PopFooter
+              onSettings={() => setTab("Settings")}
+              onRefresh={() => {}}
+              hint={
+                navMode ? (
+                  <span style={{ color: "var(--accent)" }}>Press 1–9 to focus that session · esc to cancel</span>
+                ) : null
+              }
+            />
+          )}
+          {tab !== "Live" && (
+            <div className="pop-footer">
+              <span style={{ color: "var(--fg-tertiary)" }}>
+                {tab === "Restore" ? "Last 14 days · " + restoreSessions.length + " repos" : "cc-dash 0.4.0"}
+              </span>
+              <span className="kbd-hint">
+                <span className="key">⇥</span> tab <span className="key">esc</span> close
+              </span>
+            </div>
+          )}
+          {navMode && tab === "Live" && (
+            <div className="navigate-hint">
+              <Icon name="bolt" size={11} style={{ color: "var(--accent)" }} />
+              Press a number to focus that terminal
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // Query-string driven config so a headless browser can switch states by
+    // navigating to different ?tab=... values of the same file. (Hash-based
+    // routing was flaky when Babel-standalone transforms the inline script —
+    // window.location.hash read at runtime returned empty in some passes.)
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab") || "Live";
+    const detail = params.get("detail") === "1";
+    const navMode = params.get("nav") === "1";
+    const quietInit = params.get("quiet") === "1";
+    window.__debugRenderConfig = { tab, detail, navMode, quietInit };
+
+    // Seed deterministic-ish sessions. `makeInitialSessions` uses Math.random,
+    // so seed Math.random with a constant for reproducibility across renders.
+    const seed = parseInt(params.get("seed") || "42", 10);
+    let s = seed;
+    Math.random = () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+
+    const sessions = window.makeInitialSessions(9);
+    const restoreSessions = window.makeRestoreSessions();
+    const initialDetail = detail ? sessions[0] : null;
+
+    ReactDOM.createRoot(document.getElementById("root")).render(
+      <LivePopover
+        initialTab={tab}
+        initialDetail={initialDetail}
+        navMode={navMode}
+        quietInit={quietInit}
+        sessions={sessions}
+        restoreSessions={restoreSessions}
+      />
+    );
+
+    // Signal to Playwright that React + Babel are done.
+    window.__rendered = true;
+  </script>
+</body>
+</html>

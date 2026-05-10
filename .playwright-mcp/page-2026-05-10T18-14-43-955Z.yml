@@ -1,0 +1,93 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e10]: cc-dash
+      - generic [ref=e11]: 9 live · 4 need attention
+    - button "Active" [ref=e12] [cursor=pointer]:
+      - img [ref=e14]
+      - generic [ref=e16]: Active
+  - generic [ref=e17]:
+    - button "Live" [ref=e18] [cursor=pointer]
+    - button "Restore" [ref=e19] [cursor=pointer]
+    - button "Settings" [ref=e20] [cursor=pointer]
+  - generic [ref=e22]:
+    - generic [ref=e23]: Appearance
+    - generic [ref=e24]:
+      - generic [ref=e26] [cursor=pointer]: Claude
+      - generic [ref=e28] [cursor=pointer]: Tokyo Night
+      - generic [ref=e30] [cursor=pointer]: Gruvbox
+      - generic [ref=e32] [cursor=pointer]: Nord
+    - generic [ref=e35]: Dark mode
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - generic [ref=e39]: Poll interval
+        - generic [ref=e40]: How often to refresh while popover is open
+      - generic [ref=e41]:
+        - slider [ref=e42]: "2"
+        - generic [ref=e43]: 2s
+    - generic [ref=e44]: Hotkeys
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: Navigate mode
+        - generic [ref=e48]: Show 1–9 badges on rows
+      - generic [ref=e49] [cursor=pointer]: click to bind
+    - generic [ref=e50]:
+      - generic [ref=e52]: Quiet mode
+      - generic [ref=e53] [cursor=pointer]: ⌃ ⌥ M
+    - generic [ref=e54]: Notifications
+    - generic [ref=e56]:
+      - generic [ref=e57]: Flash on attention
+      - generic [ref=e58]: Status icon blinks when a session needs you
+    - generic [ref=e60]:
+      - generic [ref=e62]: Flash duration cap
+      - generic [ref=e63]:
+        - slider [ref=e64]: "30"
+        - generic [ref=e65]: 30s
+    - generic [ref=e68]: Notification sound
+    - generic [ref=e71]:
+      - generic [ref=e72]: Custom mute durations
+      - generic [ref=e73]: Show in right-click menu
+    - generic [ref=e74]:
+      - generic [ref=e75]:
+        - generic [ref=e76]: 30 minutes
+        - img [ref=e78] [cursor=pointer]
+      - generic [ref=e80]:
+        - generic [ref=e81]: 1 hour
+        - img [ref=e83] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]: 4 hours
+        - img [ref=e88] [cursor=pointer]
+      - generic [ref=e90]:
+        - generic [ref=e91]: Until tomorrow 9 AM
+        - img [ref=e93] [cursor=pointer]
+    - generic [ref=e95]: Tools
+    - generic [ref=e96]:
+      - generic [ref=e98]: Open in IDE
+      - combobox [ref=e99] [cursor=pointer]:
+        - option "Zed" [selected]
+        - option "Cursor"
+        - option "VS Code"
+        - option "nvim"
+    - generic [ref=e100]:
+      - generic [ref=e101]:
+        - generic [ref=e102]: Accessibility permission
+        - generic [ref=e103]: Required to focus terminal windows
+      - generic [ref=e104]: Granted
+    - generic [ref=e105]: About
+    - generic [ref=e107]:
+      - generic [ref=e108]: Version
+      - generic [ref=e109]: cc-dash 0.4.0 · sidecar healthy 2s ago
+    - generic [ref=e110]:
+      - generic [ref=e111]:
+        - generic [ref=e112]: Log file
+        - generic [ref=e113]: ~/Library/Logs/cc-dash/main.log
+      - button [ref=e114] [cursor=pointer]:
+        - img [ref=e115]
+  - generic [ref=e119]:
+    - generic [ref=e120]: cc-dash 0.4.0
+    - generic [ref=e121]:
+      - generic [ref=e122]: ⇥
+      - text: tab
+      - generic [ref=e123]: esc
+      - text: close

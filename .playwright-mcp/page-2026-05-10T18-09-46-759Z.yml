@@ -1,0 +1,105 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e10]: cc-dash
+      - generic [ref=e11]: 9 live · 4 need attention
+    - button "Active" [ref=e12] [cursor=pointer]:
+      - img [ref=e14]
+      - generic [ref=e16]: Active
+  - generic [ref=e17]:
+    - button "Live" [ref=e18] [cursor=pointer]
+    - button "Restore" [ref=e19] [cursor=pointer]
+    - button "Settings" [ref=e20] [cursor=pointer]
+  - generic [ref=e22]:
+    - generic [ref=e23] [cursor=pointer]:
+      - generic [ref=e25]:
+        - generic:
+          - img [ref=e27]
+          - generic: personal/blog
+          - generic: draft/llm-eval
+        - generic:
+          - generic: wants to edit prisma/schema.prisma
+      - generic [ref=e32]: now
+    - generic [ref=e33] [cursor=pointer]:
+      - generic [ref=e35]:
+        - generic:
+          - img [ref=e37]
+          - generic: anthropic/claude-code
+          - generic: feat/permission-prompts
+        - generic:
+          - generic: wants to edit prisma/schema.prisma
+      - generic [ref=e42]: 18s ago
+    - generic [ref=e43] [cursor=pointer]:
+      - generic [ref=e45]:
+        - generic:
+          - img [ref=e47]
+          - generic: myorg/web-app
+          - generic: fix/auth-redirect
+        - generic:
+          - generic: "tool failed: pnpm build"
+      - generic [ref=e50]: 36s ago
+    - generic [ref=e51] [cursor=pointer]:
+      - generic [ref=e53]:
+        - generic:
+          - img [ref=e55]
+          - generic: myorg/web-app
+          - generic: fix/auth-redirect
+        - generic:
+          - generic: "asked: rollback or fix forward?"
+      - generic [ref=e59]: 6m ago
+    - generic [ref=e60] [cursor=pointer]:
+      - generic [ref=e62]:
+        - generic:
+          - generic: myorg/payments-api
+          - generic: feat/refunds-ledger
+        - generic:
+          - generic: reading src/server/routes
+      - generic [ref=e65]: 8m ago
+    - generic [ref=e66] [cursor=pointer]:
+      - generic [ref=e68]:
+        - generic:
+          - generic: myorg/auth-svc
+          - generic: main
+        - generic:
+          - generic: writing src/lib/queue.ts
+      - generic [ref=e71]: 10m ago
+    - generic [ref=e72] [cursor=pointer]:
+      - generic [ref=e74]:
+        - generic:
+          - generic: myorg/web-app
+          - generic: fix/auth-redirect
+        - generic:
+          - generic: "running Bash: cargo check"
+      - generic [ref=e77]: 12m ago
+    - generic [ref=e78] [cursor=pointer]:
+      - generic [ref=e80]:
+        - generic:
+          - img [ref=e82]
+          - generic: myorg/payments-api
+          - generic: feat/idempotency
+        - generic:
+          - generic: completed 3 edits
+      - generic [ref=e84]: 14m ago
+    - generic [ref=e85] [cursor=pointer]:
+      - generic [ref=e87]:
+        - generic:
+          - img [ref=e89]
+          - generic: experiments/sparkline-lab
+          - generic: main
+        - generic:
+          - generic: merged feat branch
+      - generic [ref=e91]: 16m ago
+  - generic [ref=e92]:
+    - generic [ref=e93]:
+      - button "Settings" [ref=e94] [cursor=pointer]:
+        - img [ref=e95]
+      - button "Refresh" [ref=e98] [cursor=pointer]:
+        - img [ref=e99]
+    - generic [ref=e104]:
+      - generic [ref=e105]: ↑↓
+      - text: nav
+      - generic [ref=e106]: ⏎
+      - text: open
+      - generic [ref=e107]: ⇥
+      - text: tab

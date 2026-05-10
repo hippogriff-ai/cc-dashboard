@@ -1,16 +1,25 @@
 # Screenshots
 
-These are the images embedded in the top-level `README.md`.
+These are the images embedded in the top-level `README.md`. They're rendered
+from the JSX design prototypes in `docs/ux-design/` (not from a live app) via
+a headless browser, so they don't drift with real-user data and don't depend
+on macOS permissions or signing state.
 
-## Capturing / refreshing them
+## Refreshing them
 
 ```bash
-./scripts/capture-screenshots.sh
+npx playwright install chromium     # one-time
+node scripts/capture-screenshots.mjs
 ```
 
-The script walks you through 5 shots interactively. For each one, follow the
-instruction, hit Enter, and click on the popover when `screencapture`'s cursor
-appears.
+The script spins up a tiny HTTP server, navigates a headless Chromium to
+`_render.html?tab=…` five times, and writes each PNG into this directory.
+`_render.html` is a small wrapper that loads `../ux-design/{icons,data,
+components,screens}.jsx` and re-implements just the `LivePopover` shell from
+`../ux-design/app.jsx`.
+
+> `docs/ux-design/` is gitignored — refreshing therefore requires a local
+> checkout of the design source that lives outside this repo.
 
 ## Shot list
 
@@ -21,6 +30,3 @@ appears.
 | `03-detail.png` | Session detail view — tokens, files, decisions, branch history. |
 | `04-navigate.png` | Navigate-mode overlay — `1`–`9` jump labels on rows. |
 | `05-settings.png` | Settings — theme, hotkeys, quiet mode. |
-
-Keep dimensions consistent (the popover is fixed-width). Crop tightly to the
-popover; don't include desktop background or other windows.

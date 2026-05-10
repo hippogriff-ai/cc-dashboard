@@ -1,0 +1,107 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - button [ref=e5] [cursor=pointer]:
+      - img [ref=e6]
+    - generic [ref=e8]:
+      - generic [ref=e9]: personal/blog
+      - generic [ref=e10]:
+        - img [ref=e11]
+        - generic [ref=e16]: draft/llm-eval
+        - generic [ref=e17]: ·
+        - generic [ref=e18]: 74m
+        - generic [ref=e19]: ·
+        - generic [ref=e20]: cc
+    - generic [ref=e21]:
+      - img [ref=e22]
+      - generic [ref=e27]: Permission
+  - generic [ref=e28]:
+    - generic [ref=e29]:
+      - generic [ref=e31]: Branch timeline
+      - generic [ref=e32]:
+        - generic [ref=e33] [cursor=pointer]: main
+        - generic [ref=e34]: →
+        - generic [ref=e35] [cursor=pointer]: draft/llm-eval
+    - generic [ref=e36]:
+      - generic [ref=e38]: Files changed · 5
+      - generic [ref=e39]:
+        - generic [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]:
+            - generic [ref=e42]: src/auth/
+            - text: middleware.ts
+          - generic [ref=e43]: 4 edits
+          - generic [ref=e44]: 2m ago
+        - generic [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]:
+            - generic [ref=e47]: src/lib/
+            - text: session-store.ts
+          - generic [ref=e48]: 2 edits
+          - generic [ref=e49]: 7m ago
+        - generic [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]:
+            - generic [ref=e52]: tests/
+            - text: auth.spec.ts
+          - generic [ref=e53]: 6 edits
+          - generic [ref=e54]: 12m ago
+        - generic [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]:
+            - generic [ref=e57]: prisma/
+            - text: schema.prisma
+          - generic [ref=e58]: 1 edit
+          - generic [ref=e59]: 18m ago
+        - generic [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]:
+            - generic [ref=e62]: src/server/routes/
+            - text: login.ts
+          - generic [ref=e63]: 3 edits
+          - generic [ref=e64]: 22m ago
+    - generic [ref=e65]:
+      - generic [ref=e66]:
+        - generic [ref=e67]: Token usage
+        - generic [ref=e68]: 92% — consider /compact
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - generic [ref=e71]: Input
+          - generic [ref=e72]: 42k
+        - generic [ref=e73]:
+          - generic [ref=e74]: Cached
+          - generic [ref=e75]: 134k
+        - generic [ref=e76]:
+          - generic [ref=e77]: Output
+          - generic [ref=e78]: 9.2k
+      - generic [ref=e81]:
+        - generic [ref=e82]: 185k / 200k
+        - generic [ref=e83]: 92.3%
+    - generic [ref=e84]:
+      - generic [ref=e85]:
+        - generic [ref=e86]: Load over time
+        - generic [ref=e87]: tool_use / min
+      - img [ref=e88]
+    - generic [ref=e91]:
+      - generic [ref=e93]: Last assistant message
+      - generic [ref=e94]: "I need to remove the existing node_modules before reinstalling because the lockfile changed. Can I run `rm -rf node_modules` and then reinstall?"
+    - generic [ref=e95]:
+      - generic [ref=e96]:
+        - generic [ref=e97]: Decisions for this repo
+        - generic [ref=e98]: "3"
+      - generic [ref=e99]:
+        - generic [ref=e100]: QWhat ORM does this repo use?
+        - generic [ref=e101]: APrisma 5 — schema is in prisma/schema.prisma.
+      - generic [ref=e102]:
+        - generic [ref=e103]: QShould I write integration tests?
+        - generic [ref=e104]: AYes, but only for the public API surface. Skip internal helpers.
+      - generic [ref=e105]:
+        - generic [ref=e106]: QConventional commits?
+        - generic [ref=e107]: "AYes — feat:, fix:, chore: prefixes."
+    - generic [ref=e109]:
+      - button "Focus terminal" [ref=e110] [cursor=pointer]:
+        - img [ref=e111]
+        - text: Focus terminal
+      - button "Copy resume" [ref=e114] [cursor=pointer]:
+        - img [ref=e115]
+        - text: Copy resume
+      - button "Copy fork" [ref=e118] [cursor=pointer]:
+        - img [ref=e119]
+        - text: Copy fork
+      - button "Open in IDE" [ref=e122] [cursor=pointer]:
+        - img [ref=e123]
+        - text: Open in IDE

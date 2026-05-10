@@ -22,9 +22,26 @@
 // task to keep the popover responsive.
 import Foundation
 import AppKit
+import ApplicationServices
 import os
 
 private let logger = Logger(subsystem: "dev.vcheval.cc-dashboard", category: "GhosttyFocus")
+
+/// Tracks whether we've already nudged macOS to show the Accessibility prompt
+/// this app-launch. AXIsProcessTrustedWithOptions(prompt:true) is the only
+/// API that makes macOS register the app in System Settings → Privacy &
+/// Security → Accessibility and show the standard "Open System Settings"
+/// dialog. NSAppleScript's silent -1743 failure path doesn't trigger it. We
+/// fire the prompt at most once per launch so repeat clicks don't spam.
+private actor AXPromptOnce {
+    private var fired = false
+    func tryFire() -> Bool {
+        if fired { return false }
+        fired = true
+        return true
+    }
+}
+private let axPromptOnce = AXPromptOnce()
 
 // MARK: - Public entry point
 
@@ -50,6 +67,24 @@ enum GhosttyFocus {
     }
 
     private static func runFocus(cwd: String, sid: String?) async -> FocusResult {
+        // If the app isn't AX-trusted, NSAppleScript will silently fail with
+        // -1743 and we'd return ax_permission_denied without macOS ever
+        // showing the user the standard "Open System Settings" dialog. Fire
+        // AXIsProcessTrustedWithOptions(prompt:true) once per launch to (a)
+        // register the app in the Accessibility list and (b) surface the
+        // system dialog that takes the user there. Returns immediately —
+        // the dialog is non-blocking. After this, the focus attempt below
+        // still proceeds and still returns ax_permission_denied, but the
+        // user now has a one-click path to grant rather than digging
+        // through System Settings manually.
+        if !AXIsProcessTrusted(), await axPromptOnce.tryFire() {
+            let options: NSDictionary = [
+                kAXTrustedCheckOptionPrompt.takeRetainedValue(): true
+            ]
+            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+            logger.info("AX not trusted; system prompt requested")
+        }
+
         let prompts = sessionPrompts(cwd: cwd, sid: sid)
         let earlyTokens = tokenize(prompts.early.joined(separator: " "))
         let recentTokens = tokenize(prompts.recent.joined(separator: " "))

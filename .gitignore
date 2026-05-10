@@ -2,3 +2,20 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# xcodegen output (regenerate via `make project`)
+app/cc-dashboard.xcodeproj/
+
+# Swift / Xcode build artefacts
+app/build/
+.build/
+DerivedData/
+
+# Bun / Node
+backend/node_modules/
+backend/dist/
+backend/.bun/
+backend/cc-dashboard-backend
+backend/cc-dashboard-backend.tmp
+
+# macOS

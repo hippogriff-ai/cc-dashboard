@@ -1,0 +1,6 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"What ORM does this repo use?"}]}}
+{"type":"user","message":{"role":"user","content":"Prisma 5"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Should I write integration tests?"}]}}
+{"type":"user","message":{"role":"user","content":"Yes, but only for the public API surface."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Should I write integration tests?"}]}}
+{"type":"user","message":{"role":"user","content":"Yes, but only for the public API surface."}}

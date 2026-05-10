@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"which strategy?"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Two ways: idempotency keys or unique constraints. Which would you like?"}]}}

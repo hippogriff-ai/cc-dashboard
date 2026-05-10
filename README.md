@@ -1,32 +1,57 @@
 # cc-dashboard
 
-Local web dashboard for managing many Claude Code terminal windows.
+Menu-bar app for managing many Claude Code terminal windows.
 
 Two views on the same data pipeline:
 
 - **Live** — ranked inbox of live sessions. Shows which session needs you next
-  (permission pending → tool failed → asking you → idle → working). Click to
-  focus the owning Ghostty window.
+  (permission pending → tool failed → asking you → idle → working). Press `⏎`
+  on a row to focus the owning Ghostty window.
 - **Restore** — crash recovery. Shows the most recent session per repo in the
   last 14 days, with a "where I left off" panel: last prompts, Claude's last
   message, open tool calls, git state. Click to copy a `claude --resume`
   command (or a fork summary) to your clipboard.
 
+A **Session Detail** push view (open via the chevron / row tap on Live) shows
+files changed, branch history, token usage with a sparkline, and the most
+recent assistant turn. The status bar icon flashes when a session needs your
+attention; a Quiet-mode toggle suppresses both the flash and the OS-level
+notification when you don't want to be interrupted.
+
 ## Run
 
 ```
-python3 server.py
+make app-build         # builds the .app bundle
+make app-run           # opens it
 ```
 
-Opens at http://localhost:7777. Auto-refreshes every 3 seconds.
+The app appears in your menu bar. The Bun-compiled TypeScript sidecar is
+bundled inside the `.app` (`Contents/Resources/backend/`) — no Python or Node
+required at runtime.
+
+## Build prerequisites
+
+- macOS 14+
+- Xcode 15+ Command Line Tools (`xcode-select --install`)
+- `xcodegen` (`brew install xcodegen`)
+- `bun` (`brew install oven-sh/bun/bun`)
 
 ## Keyboard
 
+In-popover (when the popover is visible):
+
 - `↑` `↓` / `j` `k` — navigate rows
-- `⏎` — focus terminal (Live) / copy resume command (Restore)
-- `space` — focus top row
-- `Tab` — toggle Live / Restore
+- `⏎` / `space` — focus terminal (Live) / activate row
+- `Tab` — cycle Live / Restore / Settings
 - `r` — force refresh
+- `Esc` — exit nav-mode if active, otherwise close the popover
+- `1`–`9` — when nav-mode is on, jump to that row
+
+Global (rebindable in Settings → Hotkeys via the vendored
+`KeyboardShortcuts.Recorder`):
+
+- Toggle Quiet — default `⌃⌥M`
+- Navigate-mode — no default; assign in Settings
 
 ## How the focus mechanism works (Ghostty)
 
@@ -49,23 +74,14 @@ Strategy: **content-based title matching against the session's early prompts**.
 5. `AXRaise` the winning window and set `frontmost`.
 
 If no confident match (window on another space, brand-new session with no
-transcript yet, or ambiguous topic), fall back to the "find this window"
-sticky card — a small corner overlay with repo, branch, Claude's last
-message, and your last prompt, so you can visually pick the right window.
+transcript yet, or ambiguous topic), the popover surfaces a transient
+"No terminal window matched" toast — visual cue to find the window manually.
 
 ### One-time macOS permission
 
-On first use, macOS will prompt for **Accessibility** permission for whichever
-process is running `osascript` (typically your terminal emulator or iTerm2
-if that's where you launched `python3 server.py`). Grant once, lives forever.
-
-### Current accuracy on this machine
-
-With 5 Ghostty windows visible across 2 macOS spaces and 8 live sessions,
-the matcher correctly identifies all 4 sessions whose windows are on the
-active space, scoring each between 6–12 with clear margins. The 4 sessions
-whose windows are on other spaces correctly report "no match" and get the
-sticky fallback.
+On first launch, macOS will prompt for **Accessibility** permission for the
+`cc-dashboard` app (the running process invokes `osascript` indirectly via
+the bundled sidecar). Grant once, lives forever.
 
 ### Known limitations
 
@@ -77,7 +93,7 @@ sticky fallback.
   topic's window. Work around by using `claude --continue` in a fresh window
   or starting a new session.
 - **Tabs**: Ghostty tabs are not exposed via AX. One session per window is
-  assumed (confirmed by user's setup).
+  assumed (confirmed by the developer's setup).
 
 ## Data sources
 
@@ -91,22 +107,43 @@ sticky fallback.
 ## Architecture
 
 ```
-  ~/.claude/sessions/*.json          fs.watch (not yet; polls)
-        │
-        ▼
-  load_live_sessions() ──┐
-                         │     classify()
-  ~/.claude/projects ────┼──→  event: ASK|PERMISSION_PENDING|TOOL_FAILED|
-     /*/<sid>.jsonl      │           WORKING|IDLE_AFTER_COMPLETE|CLEAR
-                         │
-  ~/.claude/history.jsonl ┘
-        │
-        ▼
-  HTTP server (:7777) ──→  single-page frontend (polls every 3s)
-        │
-        ├── POST /api/focus   → osascript → Ghostty AXRaise
-        ├── POST /api/resume  → pbcopy `cd && claude --resume <sid>`
-        └── POST /api/fork    → pbcopy markdown summary for fresh session
+  ┌─────────────────────────────────────────────────────────┐
+  │ cc-dashboard.app  (Swift, menu-bar `LSUIElement`)       │
+  │                                                         │
+  │   StatusItem ──▶ FlashController ──▶ icon flash         │
+  │   PopoverController                                     │
+  │     ├─ LiveTab / RestoreTab / SessionDetail             │
+  │     ├─ KeyboardMonitor (in-popover ↑↓/j-k/⏎/1-9)        │
+  │     ├─ KeyboardShortcuts (vendored, global hotkeys)     │
+  │     └─ ErrorBanner (transient toast)                    │
+  │                                                         │
+  │   spawns ─▶ Contents/Resources/backend/                 │
+  │             cc-dashboard-backend  (Bun standalone)      │
+  └─────────────────────────────────────────────────────────┘
+                            │  HTTP on 127.0.0.1:<ephemeral>
+                            ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │ TypeScript sidecar (Bun, bundled at build time)         │
+  │                                                         │
+  │   ~/.claude/sessions/*.json ──┐                         │
+  │   ~/.claude/projects/.../...jsonl ─┼─▶ classifier       │
+  │   ~/.claude/history.jsonl ────┘   (5-state event)       │
+  │                                                         │
+  │   GET /api/health                                       │
+  │   GET /api/live          → ranked inbox                 │
+  │   GET /api/recent        → recent-by-repo               │
+  │   GET /api/panel?cwd     → Decision Log + git diff      │
+  │   GET /api/decisions?cwd → projection registry          │
+  │   GET /api/session-detail?sid                           │
+  │   POST /api/focus  → osascript → Ghostty AXRaise        │
+  │   POST /api/resume → pbcopy resume command              │
+  │   POST /api/fork   → pbcopy fork summary                │
+  │   POST /api/open-ide → NSWorkspace bundle-id            │
+  └─────────────────────────────────────────────────────────┘
 ```
 
-No external dependencies. Python stdlib + osascript + pbcopy + git.
+No external runtime dependencies. The sidecar binary contains the full Bun
+runtime (~63 MB) and is unpacked at build time into the `.app` bundle, so
+the app is hermetic — no `bun` / `node` / `python` required on the user's
+machine. The sidecar self-terminates when its parent app dies (`getppid()`
+poll), so force-quitting the app doesn't leak background processes.

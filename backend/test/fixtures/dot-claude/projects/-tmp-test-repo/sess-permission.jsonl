@@ -1,0 +1,2 @@
+{"type":"user","cwd":"/tmp/test-repo","message":{"role":"user","content":"please clean install"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I need to remove node_modules. Can I run rm -rf node_modules?"}]}}

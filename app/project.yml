@@ -1,0 +1,92 @@
+name: cc-dashboard
+options:
+  bundleIdPrefix: dev.vcheval
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    PRODUCT_BUNDLE_IDENTIFIER: dev.vcheval.cc-dashboard
+    MARKETING_VERSION: "0.4.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  cc-dashboard:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+        excludes:
+          - "**/*.entitlements"
+          - "**/Info.plist"
+    resources:
+      - Sources/Resources
+    postBuildScripts:
+      - name: Embed backend binary
+        script: |
+          set -euo pipefail
+          SRC="${SRCROOT}/../backend/cc-dashboard-backend"
+          DST_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/backend"
+          if [ ! -f "$SRC" ]; then
+            if [ "${ALLOW_MISSING_BACKEND:-0}" = "1" ]; then
+              echo "warning: backend binary not found at $SRC; ALLOW_MISSING_BACKEND=1, skipping embed"
+              exit 0
+            fi
+            echo "error: backend binary not found at $SRC; run 'make backend-build' first (or set ALLOW_MISSING_BACKEND=1 to bypass)" >&2
+            exit 1
+          fi
+          mkdir -p "$DST_DIR"
+          /usr/bin/rsync -a "$SRC" "$DST_DIR/cc-dashboard-backend"
+          chmod +x "$DST_DIR/cc-dashboard-backend"
+          # The bun-compiled binary already carries an adhoc linker-signed
+          # signature. `codesign --force --sign -` replaces it with one that
+          # fails "main executable failed strict validation" because the
+          # bun-compiled Mach-O contains a JavaScriptCore data section the
+          # standard signer rejects. Loop 26 confirmed re-signing breaks the
+          # build, while the bun-supplied adhoc signature passes Gatekeeper
+          # for local-dev launches. Distribution / notarization will need a
+          # different approach (sign the whole bundle with --deep, or wait
+          # for a bun release that produces codesign-friendly output).
+        inputFiles:
+          - $(SRCROOT)/../backend/cc-dashboard-backend
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/backend/cc-dashboard-backend
+    info:
+      path: Sources/Resources/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleName: cc-dashboard
+        CFBundleDisplayName: cc-dashboard
+        CFBundleIdentifier: dev.vcheval.cc-dashboard
+        NSHumanReadableCopyright: ""
+        # App Transport Security exception: allow plain HTTP to localhost for
+        # the bundled TypeScript sidecar at `http://127.0.0.1:<ephemeral>`.
+        # Loop 25 end-to-end smoke testing surfaced that without this key
+        # `URLSession.data(from:)` silently times out (NSURLErrorDomain -1001)
+        # on every poll because ATS blocks plaintext HTTP by default on
+        # macOS 10.11+. `NSAllowsLocalNetworking` is the surgical fix —
+        # narrowly scoped to localhost without TLS, no broader exception.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: Sources/Resources/cc-dashboard.entitlements
+        # Re-enabled: the request-timeout smoke-test failure traced to ATS,
+        # not to hardened runtime + unsigned child. `NSAllowsLocalNetworking`
+        # in Info.plist is the right fix. Distribution still needs a codesign
+        # step on the embedded binary (Task 32+) before notarization.
+        ENABLE_HARDENED_RUNTIME: YES
+  cc-dashboardTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vcheval.cc-dashboard.tests
+    dependencies:
+      - target: cc-dashboard

@@ -1,0 +1,3 @@
+# Bun config for the cc-dashboard sidecar.
+# Reserved for future test-time preloads; bun rejects empty `preload = []`,
+# so the [test] section is intentionally absent until a real preload is needed.

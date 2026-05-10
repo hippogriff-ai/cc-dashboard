@@ -26,3 +26,6 @@ RALPH_PROMPT.md
 
 # UX design source-of-truth (kept on disk, not shipped)
 docs/ux-design/
+
+# Playwright MCP browser tool session artifacts (console + snapshot dumps)
+.playwright-mcp/

@@ -33,8 +33,10 @@ test-app: project
 
 clean:
 	rm -rf app/build app/cc-dashboard.xcodeproj backend/cc-dashboard-backend backend/dist
-	@# Reap stranded sidecars from prior `make test-app` runs that predate the
-	@# Loop 35 ppid-watchdog. The `|| true` keeps `make clean` exit-0 when no
-	@# zombies are running. New sidecars (with watchdog) self-clean on parent
-	@# death so this is a one-time safety net for old binaries on disk.
+	@# Belt-and-suspenders sidecar reap. The shipped backend has stdin-EOF +
+	@# ppid-poll watchdogs that self-terminate on parent death (commits
+	@# 7caa790, 2fc10d9), so leaks should not happen. Kept anyway because
+	@# `make clean` is the canonical "reset everything" command and a stray
+	@# sidecar from a debugger session or SIGSTOP'd parent would otherwise
+	@# survive. `|| true` keeps `make clean` exit-0 when nothing is running.
 	@pkill -f 'cc-dashboard.app/Contents/Resources/backend/cc-dashboard-backend' 2>/dev/null || true

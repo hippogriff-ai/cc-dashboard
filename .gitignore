@@ -19,3 +19,10 @@ backend/cc-dashboard-backend
 backend/cc-dashboard-backend.tmp
 
 # macOS
+
+# Ralph Loop dev artifacts (personal state, not shipped)
+CONTINUITY.md
+RALPH_PROMPT.md
+
+# UX design source-of-truth (kept on disk, not shipped)
+docs/ux-design/

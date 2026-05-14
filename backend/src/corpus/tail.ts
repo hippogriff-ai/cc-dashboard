@@ -67,14 +67,18 @@ function applyTurns(
 ): void {
   const sess = getOrCreateSession(state, sid, cwd);
 
-  // Branch sample (one per call, since we re-read git each event)
-  const gi = gitInfo(cwd);
-  if (gi.branch) {
-    const last = sess.branchTimeline[sess.branchTimeline.length - 1];
-    if (!last || last.branch !== gi.branch) {
-      sess.branchTimeline.push({ ts: Date.now(), branch: gi.branch });
-    }
-  }
+  // Order is load-bearing: accumulate tokens / files / load FIRST so a
+  // transient failure in the optional side-effects below (gitInfo subprocess
+  // glitches; extractDecisions regex misbehaviour) can't strand a session
+  // with zero tokens forever. Pre-fix, an exception in gitInfo (which runs
+  // a git subprocess and can throw on lock files / EAGAIN / permission
+  // races) would propagate out of applyTurns → tail.add's catch sets
+  // coldStartFailed=true → watcher never registers → rebalance retries
+  // every 5s but throws the same way each retry, so the bySession entry
+  // (already created by getOrCreateSession above) is permanently stuck at
+  // tokens=0. Observed in the wild: gbrain session showed 0/200K for 23h
+  // while its transcript had cumulative 35M cache_read tokens; backend
+  // restart cleared the bad state. Tokens-first ordering is the fix.
 
   // Files + tokens + load
   for (const t of turns) {
@@ -113,17 +117,41 @@ function applyTurns(
     }
   }
 
+  // Branch + decisions are side-effect-only; their failures don't justify
+  // dropping the token accumulation we just did. Catch + log so transient
+  // git or regex glitches degrade gracefully into "no branch update this
+  // tick" rather than "session permanently stuck at zero tokens".
+  try {
+    const gi = gitInfo(cwd);
+    if (gi.branch) {
+      const last = sess.branchTimeline[sess.branchTimeline.length - 1];
+      if (!last || last.branch !== gi.branch) {
+        sess.branchTimeline.push({ ts: Date.now(), branch: gi.branch });
+      }
+    }
+  } catch (e) {
+    log.warn("applyTurns: gitInfo failed; skipping branch update", {
+      sid, cwd, error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
   // Decisions per cwd: extractDecisions is idempotent (it dedupes internally),
   // and we additionally dedupe against existing pairs to avoid re-pushing on every event.
-  const pairs = extractDecisions(turns);
-  if (pairs.length) {
-    const cur = state.decisionsByCwd.get(cwd) ?? [];
-    const seen = new Set(cur.map((p) => p.q + DEDUP_SEP + p.a));
-    for (const p of pairs) {
-      const k = p.q + DEDUP_SEP + p.a;
-      if (!seen.has(k)) { cur.push(p); seen.add(k); }
+  try {
+    const pairs = extractDecisions(turns);
+    if (pairs.length) {
+      const cur = state.decisionsByCwd.get(cwd) ?? [];
+      const seen = new Set(cur.map((p) => p.q + DEDUP_SEP + p.a));
+      for (const p of pairs) {
+        const k = p.q + DEDUP_SEP + p.a;
+        if (!seen.has(k)) { cur.push(p); seen.add(k); }
+      }
+      state.decisionsByCwd.set(cwd, cur);
     }
-    state.decisionsByCwd.set(cwd, cur);
+  } catch (e) {
+    log.warn("applyTurns: extractDecisions failed; skipping decision update", {
+      sid, cwd, error: e instanceof Error ? e.message : String(e),
+    });
   }
 }
 

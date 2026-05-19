@@ -84,6 +84,61 @@ final class GhosttyFocusScoreTests: XCTestCase {
         XCTAssertEqual(r.score, 0)
         XCTAssertEqual(r.hits, [])
     }
+
+    /// assistant_last contributes weight 2 (same as cwd) — fills the gap
+    /// for drifted sessions where early/recent prompts are stale.
+    func testAssistantHitsWeight2() {
+        let r = scoreWindow(
+            window: ["caching", "techniques"],
+            early:  [],
+            recent: [],
+            cwd:    [],
+            assistant: ["caching", "techniques"]
+        )
+        XCTAssertEqual(r.score, 4)
+        XCTAssertEqual(r.assistantHits.sorted(), ["caching", "techniques"])
+        XCTAssertEqual(r.hits.sorted(), ["caching", "techniques"])
+    }
+
+    /// When a token is in BOTH early and assistant, it's counted once at
+    /// the higher (early = 3) weight — assistant comes second in priority.
+    func testAssistantDoesNotDoubleCountWithEarly() {
+        let r = scoreWindow(
+            window:    ["alpha"],
+            early:     ["alpha"],
+            recent:    [],
+            cwd:       [],
+            assistant: ["alpha"]
+        )
+        XCTAssertEqual(r.score, 3)
+        XCTAssertEqual(r.hits, ["alpha"])
+    }
+
+    /// Pure assistant hit + pure cwd hit accumulate independently when the
+    /// tokens are different. 2 (cwd) + 2 (assistant) = 4.
+    func testAssistantAndCwdAccumulate() {
+        let r = scoreWindow(
+            window:    ["project", "caching"],
+            early:     [],
+            recent:    [],
+            cwd:       ["project"],
+            assistant: ["caching"]
+        )
+        XCTAssertEqual(r.score, 4)
+    }
+
+    /// Score with no assistant signal (default empty) matches the original
+    /// 3-bucket behaviour — guards against accidental regressions.
+    func testEmptyAssistantDefaultsToOriginalBehavior() {
+        let r = scoreWindow(
+            window: ["alpha", "beta", "gamma"],
+            early:  ["alpha"],
+            recent: ["gamma"],
+            cwd:    ["beta"]
+        )
+        XCTAssertEqual(r.score, 6)
+        XCTAssertEqual(r.assistantHits, [])
+    }
 }
 
 final class GhosttyFocusSessionPromptsTests: XCTestCase {
@@ -137,17 +192,59 @@ final class GhosttyFocusSessionPromptsTests: XCTestCase {
         ])
         // 7 valid prompts > 5, so recent = last 3 of the full list.
         XCTAssertEqual(prompts.recent, ["fifth prompt", "sixth prompt", "seventh prompt"])
+        // Fixture has no assistant turns, so lastAssistant is nil.
+        XCTAssertNil(prompts.lastAssistant)
     }
 
     func testReturnsEmptyWhenSidNil() {
         let r = sessionPrompts(cwd: "/tmp/whatever", sid: nil)
         XCTAssertEqual(r.early, [])
         XCTAssertEqual(r.recent, [])
+        XCTAssertNil(r.lastAssistant)
     }
 
     func testReturnsEmptyWhenTranscriptMissing() {
         let r = sessionPrompts(cwd: "/tmp/nonexistent-\(UUID().uuidString)", sid: "x")
         XCTAssertEqual(r.early, [])
         XCTAssertEqual(r.recent, [])
+        XCTAssertNil(r.lastAssistant)
+    }
+
+    /// Captures the latest assistant text turn (post-compact recap, etc.).
+    /// String-content turns are taken as-is; block-content turns concat all
+    /// text blocks and skip thinking/tool_use. Latest-in-file-order wins.
+    func testExtractsLastAssistantTurn() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cc-dash-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let cwd = "/tmp/asst-repo"
+        let sid = "abc"
+        let projects = tmp.appendingPathComponent("projects").appendingPathComponent("-tmp-asst-repo")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let jsonl = projects.appendingPathComponent("\(sid).jsonl")
+
+        let lines = [
+            #"{"type":"user","message":{"role":"user","content":"first"}}"#,
+            // Earlier assistant turn — should be superseded by the latest one.
+            #"{"type":"assistant","message":{"role":"assistant","content":"earlier reply"}}"#,
+            // Block-content with a text block + a thinking block + a tool_use.
+            // Only the text block content should be captured.
+            #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden reasoning"},{"type":"text","text":"recap: prompt caching techniques"},{"type":"tool_use","name":"Read","input":{}}]}}"#,
+            // Sidechain assistant turn — must be skipped.
+            #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":"sidechain - exclude"}}"#,
+        ]
+        try lines.joined(separator: "\n").write(to: jsonl, atomically: true, encoding: .utf8)
+
+        setenv("CLAUDE_HOME", tmp.path, 1)
+        defer { unsetenv("CLAUDE_HOME") }
+
+        let r = sessionPrompts(cwd: cwd, sid: sid)
+        XCTAssertEqual(r.lastAssistant, "recap: prompt caching techniques")
+        // Sidechain was filtered — verify by absence of "sidechain" word.
+        XCTAssertFalse(r.lastAssistant?.contains("sidechain") ?? true)
+        // Thinking block must NOT leak into the assistant tokens.
+        XCTAssertFalse(r.lastAssistant?.contains("hidden reasoning") ?? true)
     }
 }

@@ -88,6 +88,16 @@ enum GhosttyFocus {
         let prompts = sessionPrompts(cwd: cwd, sid: sid)
         let earlyTokens = tokenize(prompts.early.joined(separator: " "))
         let recentTokens = tokenize(prompts.recent.joined(separator: " "))
+        // assistant_last: the most recent assistant text turn. Reflects what
+        // the user is *currently* seeing in the terminal — Claude's most
+        // recent response, which often includes recap/topic summary after a
+        // /compact or /resume. Catches drifted sessions where `early` is
+        // stale (a slash-command 26 days ago) and `recent` is empty
+        // (transcript has only a couple of human-typed prompts). Weight 2
+        // matches cwd: enough to push a window over MIN_SCORE=5 when
+        // combined with a single early/cwd hit, but not enough to dominate
+        // if early prompts strongly point at a different window.
+        let assistantTokens = tokenize(prompts.lastAssistant ?? "")
         // Mirror TS: tokenize the cwd basename with `-`/`_` rewritten to spaces.
         // Without the rewrite, `tokenize` would treat "agent-portal" as a single
         // token and miss the cross-bucket overlap with the prompt tokens.
@@ -121,7 +131,8 @@ enum GhosttyFocus {
 
         let scored = windows.map { w -> (index: Int, title: String, result: ScoreResult) in
             let tt = tokenize(w.title)
-            let r = scoreWindow(window: tt, early: earlyTokens, recent: recentTokens, cwd: cwdTokens)
+            let r = scoreWindow(window: tt, early: earlyTokens, recent: recentTokens,
+                                cwd: cwdTokens, assistant: assistantTokens)
             return (w.index, w.title, r)
         }.sorted { $0.result.score > $1.result.score }
 
@@ -217,22 +228,32 @@ struct ScoreResult: Equatable {
     var earlyHits: [String]
     var recentHits: [String]
     var cwdHits: [String]
+    var assistantHits: [String]
 }
 
-/// Mirrors `backend/src/ghostty/score.ts`. Weights: early hit = 3, cwd = 2,
-/// recent = 1. A token in multiple buckets counts once at the highest weight
-/// (TS uses a `counted` set in priority order: early → cwd → recent).
+/// Weights: early = 3, assistant_last = 2, cwd = 2, recent = 1.
+/// A token in multiple buckets is counted once at the highest weight; ties
+/// are broken by iteration order (early > assistant > cwd > recent), which
+/// puts the token in the most-meaningful bucket for the `*Hits` breakdown.
+///
+/// The `assistant` argument is optional with a default of `[]` so the
+/// signature stays callable by tests that only care about the three
+/// original buckets. Pass the last assistant turn's tokens to catch
+/// "drifted session" cases — see `runFocus` for rationale.
 func scoreWindow(window: Set<String>,
                  early: Set<String>,
                  recent: Set<String>,
-                 cwd: Set<String>) -> ScoreResult {
+                 cwd: Set<String>,
+                 assistant: Set<String> = []) -> ScoreResult {
     let earlyHit = window.intersection(early)
+    let assistantHit = window.intersection(assistant)
     let recentHit = window.intersection(recent)
     let cwdHit = window.intersection(cwd)
 
     var counted: Set<String> = []
     var score = 0
     for t in earlyHit where !counted.contains(t) { score += 3; counted.insert(t) }
+    for t in assistantHit where !counted.contains(t) { score += 2; counted.insert(t) }
     for t in cwdHit where !counted.contains(t) { score += 2; counted.insert(t) }
     for t in recentHit where !counted.contains(t) { score += 1; counted.insert(t) }
 
@@ -240,8 +261,9 @@ func scoreWindow(window: Set<String>,
         score: score,
         hits: counted.sorted(),
         earlyHits: earlyHit.sorted(),
-        recentHits: recentHit.subtracting(earlyHit).sorted(),
-        cwdHits: cwdHit.subtracting(earlyHit).sorted()
+        recentHits: recentHit.subtracting(earlyHit).subtracting(assistantHit).sorted(),
+        cwdHits: cwdHit.subtracting(earlyHit).subtracting(assistantHit).sorted(),
+        assistantHits: assistantHit.subtracting(earlyHit).sorted()
     )
 }
 
@@ -280,55 +302,88 @@ func findTranscript(cwd: String, sid: String) -> URL? {
     return FileManager.default.fileExists(atPath: url.path) ? url : nil
 }
 
-/// Read the JSONL transcript for `cwd`/`sid` and return the first 5 user
-/// prompts as `early` and the last 3 (when there are >5 total) as `recent`.
-/// Empty arrays for both when the transcript is missing or has no prompts.
+/// Read the JSONL transcript for `cwd`/`sid` and return:
+///   - `early`: first 5 substantive user prompts
+///   - `recent`: last 3 (when there are >5 total)
+///   - `lastAssistant`: text content of the latest assistant turn, or nil
+///
+/// Empty arrays + nil when the transcript is missing or has no prompts.
 /// Filters out IDE-injected prompts (`<ide_selection>`) and system reminders
-/// (`<system-reminder>`) per the prior TS implementation.
-func sessionPrompts(cwd: String, sid: String?) -> (early: [String], recent: [String]) {
+/// (`<system-reminder>`) on the user side. For assistant turns, only `text`
+/// blocks are concatenated (thinking and tool_use blocks are skipped — those
+/// aren't visible-to-user content and would pollute tokens with tool names).
+func sessionPrompts(cwd: String, sid: String?) -> (early: [String], recent: [String], lastAssistant: String?) {
     guard let sid, !sid.isEmpty,
           let tp = findTranscript(cwd: cwd, sid: sid),
           let raw = try? String(contentsOf: tp, encoding: .utf8)
     else {
-        return ([], [])
+        return ([], [], nil)
     }
     var prompts: [String] = []
+    var lastAssistant: String? = nil
     for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
-        // Cheap pre-filter (mirrors TS): only the lines that even mention
-        // user-type get the JSON parse cost. Saves work on long transcripts
-        // where assistant turns dominate.
-        guard line.contains("\"type\":\"user\"") else { continue }
+        // Cheap pre-filter: a line that doesn't say "user" or "assistant"
+        // can't be one of the records we care about. Avoids JSON.parse cost
+        // on tool_result lines and similar.
+        let isUserLine = line.contains("\"type\":\"user\"")
+        let isAssistantLine = line.contains("\"type\":\"assistant\"")
+        guard isUserLine || isAssistantLine else { continue }
         guard let data = line.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { continue }
         if let isSidechain = obj["isSidechain"] as? Bool, isSidechain { continue }
         guard let m = obj["message"] as? [String: Any],
-              let role = m["role"] as? String, role == "user"
+              let role = m["role"] as? String
         else { continue }
 
-        var text = ""
-        if let s = m["content"] as? String {
-            text = s
-        } else if let blocks = m["content"] as? [[String: Any]] {
-            for b in blocks {
-                if let t = b["type"] as? String, t == "text",
-                   let bt = b["text"] as? String {
-                    text = bt
-                    break
+        if isUserLine, role == "user" {
+            var text = ""
+            if let s = m["content"] as? String {
+                text = s
+            } else if let blocks = m["content"] as? [[String: Any]] {
+                for b in blocks {
+                    if let t = b["type"] as? String, t == "text",
+                       let bt = b["text"] as? String {
+                        text = bt
+                        break
+                    }
                 }
             }
-        }
-        guard !text.isEmpty,
-              !text.hasPrefix("<ide_selection>"),
-              !text.hasPrefix("<system-reminder>") else { continue }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            prompts.append(String(trimmed.prefix(500)))
+            guard !text.isEmpty,
+                  !text.hasPrefix("<ide_selection>"),
+                  !text.hasPrefix("<system-reminder>") else { continue }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                prompts.append(String(trimmed.prefix(500)))
+            }
+        } else if isAssistantLine, role == "assistant" {
+            // Concatenate all `text` blocks (skip thinking/tool_use). For a
+            // single-string content, take it as-is. Overwrite `lastAssistant`
+            // each iteration so we end up with the latest in file order.
+            var text = ""
+            if let s = m["content"] as? String {
+                text = s
+            } else if let blocks = m["content"] as? [[String: Any]] {
+                var parts: [String] = []
+                for b in blocks {
+                    if let t = b["type"] as? String, t == "text",
+                       let bt = b["text"] as? String {
+                        parts.append(bt)
+                    }
+                }
+                text = parts.joined(separator: "\n")
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                // Cap at 2 KB — enough signal for tokenization, bounded so a
+                // single long assistant response can't dominate the token set.
+                lastAssistant = String(trimmed.prefix(2000))
+            }
         }
     }
     let early = Array(prompts.prefix(5))
     let recent = prompts.count > 5 ? Array(prompts.suffix(3)) : []
-    return (early, recent)
+    return (early, recent, lastAssistant)
 }
 
 // MARK: - AppleScript bridge (port of backend/src/ghostty/applescript.ts)

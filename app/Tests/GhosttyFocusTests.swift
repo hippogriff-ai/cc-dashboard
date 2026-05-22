@@ -210,6 +210,74 @@ final class GhosttyFocusSessionPromptsTests: XCTestCase {
         XCTAssertNil(r.lastAssistant)
     }
 
+    /// User turns wrapped in machine-generated tags (slash commands, IDE
+    /// selection, system reminders) are excluded from the prompts list.
+    /// Real user text passes through unchanged.
+    func testIsMachineGeneratedUserTurn() {
+        XCTAssertTrue(isMachineGeneratedUserTurn("<ide_selection>x</ide_selection>"))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<system-reminder>x</system-reminder>"))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<command-name>/clear</command-name>"))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<command-message>laser</command-message>"))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<command-args>foo</command-args>"))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<local-command-caveat>Caveat: ..."))
+        XCTAssertTrue(isMachineGeneratedUserTurn("<local-command-output>...</local-command-output>"))
+        XCTAssertFalse(isMachineGeneratedUserTurn("How do I configure caching?"))
+        XCTAssertFalse(isMachineGeneratedUserTurn("here's some <html> in a real question"))
+        XCTAssertFalse(isMachineGeneratedUserTurn(""))
+    }
+
+    /// Regression for the gbrain failure-to-match scenario observed
+    /// 2026-05-22: a real session whose first 5 user turns were all
+    /// slash-command wrappers (`<command-name>/laser</command-name>`,
+    /// `<local-command-caveat>...`, etc.). The pre-fix matcher ingested
+    /// "command", "name", "message", "laser", "caveat" as early-bucket
+    /// tokens (weight 3) and scored noise instead of real topic signal,
+    /// missing every visible Ghostty window.
+    func testFiltersOutSlashCommandWrappersInEarlyPrompts() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cc-dash-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let cwd = "/tmp/gbrain-like"
+        let sid = "abc"
+        let projects = tmp.appendingPathComponent("projects").appendingPathComponent("-tmp-gbrain-like")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let jsonl = projects.appendingPathComponent("\(sid).jsonl")
+
+        let lines = [
+            // 5 slash-command-shaped turns — must all be filtered out.
+            #"{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: machine generated"}}"#,
+            #"{"type":"user","message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#,
+            #"{"type":"user","message":{"role":"user","content":"<command-message>laser</command-message>"}}"#,
+            #"{"type":"user","message":{"role":"user","content":"<command-args>foo bar</command-args>"}}"#,
+            #"{"type":"user","message":{"role":"user","content":"<command-stdout>output</command-stdout>"}}"#,
+            // Real prompts — must come through.
+            #"{"type":"user","message":{"role":"user","content":"design the vbrain schema"}}"#,
+            #"{"type":"user","message":{"role":"user","content":"add the extension hooks"}}"#,
+        ]
+        try lines.joined(separator: "\n").write(to: jsonl, atomically: true, encoding: .utf8)
+
+        setenv("CLAUDE_HOME", tmp.path, 1)
+        defer { unsetenv("CLAUDE_HOME") }
+
+        let r = sessionPrompts(cwd: cwd, sid: sid)
+        // Only the two real prompts survive — slash-command wrappers gone.
+        XCTAssertEqual(r.early, ["design the vbrain schema", "add the extension hooks"])
+        // Sanity: tokens derived from these don't contain the noise words.
+        let early = tokenize(r.early.joined(separator: " "))
+        XCTAssertFalse(early.contains("command"))
+        XCTAssertFalse(early.contains("name"))
+        XCTAssertFalse(early.contains("message"))
+        XCTAssertFalse(early.contains("laser"))
+        XCTAssertFalse(early.contains("caveat"))
+        // And the real topic words DO survive.
+        XCTAssertTrue(early.contains("vbrain"))
+        XCTAssertTrue(early.contains("schema"))
+        XCTAssertTrue(early.contains("extension"))
+        XCTAssertTrue(early.contains("hooks"))
+    }
+
     /// Captures the latest assistant text turn (post-compact recap, etc.).
     /// String-content turns are taken as-is; block-content turns concat all
     /// text blocks and skip thinking/tool_use. Latest-in-file-order wins.

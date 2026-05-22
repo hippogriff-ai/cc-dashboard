@@ -275,6 +275,18 @@ func scoreWindow(window: Set<String>,
 /// Mirrors TS `cwdToEncoded`: replace each `/` and `.` with `-`. The TS impl
 /// throws on relative paths; Swift returns `nil` from the surrounding
 /// `findTranscript` instead, which is the only caller.
+/// Detects user-turn prefixes that mark machine-generated content (slash
+/// commands, IDE injections, house-keeping reminders) — see `sessionPrompts`
+/// for the full rationale + symptom history.
+///
+/// `internal` (default) access so XCTest can pin the contract directly.
+func isMachineGeneratedUserTurn(_ text: String) -> Bool {
+    return text.hasPrefix("<ide_selection>")
+        || text.hasPrefix("<system-reminder>")
+        || text.hasPrefix("<command-")
+        || text.hasPrefix("<local-command-")
+}
+
 private func cwdToEncoded(_ cwd: String) -> String? {
     guard cwd.hasPrefix("/") else { return nil }
     var result = ""
@@ -308,10 +320,25 @@ func findTranscript(cwd: String, sid: String) -> URL? {
 ///   - `lastAssistant`: text content of the latest assistant turn, or nil
 ///
 /// Empty arrays + nil when the transcript is missing or has no prompts.
-/// Filters out IDE-injected prompts (`<ide_selection>`) and system reminders
-/// (`<system-reminder>`) on the user side. For assistant turns, only `text`
-/// blocks are concatenated (thinking and tool_use blocks are skipped — those
-/// aren't visible-to-user content and would pollute tokens with tool names).
+/// Filters out machine-generated user-turn artifacts on the user side:
+///   - `<ide_selection>` — VS Code injects the current editor selection
+///   - `<system-reminder>` — Claude Code injects house-keeping reminders
+///   - `<command-name>` / `<command-message>` / `<command-args>` /
+///     `<command-stdout>` — slash-command wrappers
+///   - `<local-command-caveat>` / `<local-command-output>` — local
+///     slash-command boilerplate
+///
+/// All of these tokenize to high-frequency, low-signal words like "command",
+/// "name", "message", "clear" that would otherwise dominate the early-prompts
+/// token bucket at weight 3 and drown out real topic signal. Observed in the
+/// wild: a 26-prompt gbrain session whose top 5 user turns were all
+/// slash-command shells; the matcher scored "laser caveat command name" as
+/// the session's "topic" and missed every window with the actual project's
+/// vocabulary in the title.
+///
+/// For assistant turns, only `text` blocks are concatenated (thinking and
+/// tool_use blocks are skipped — those aren't visible-to-user content and
+/// would pollute tokens with tool names).
 func sessionPrompts(cwd: String, sid: String?) -> (early: [String], recent: [String], lastAssistant: String?) {
     guard let sid, !sid.isEmpty,
           let tp = findTranscript(cwd: cwd, sid: sid),
@@ -350,8 +377,7 @@ func sessionPrompts(cwd: String, sid: String?) -> (early: [String], recent: [Str
                 }
             }
             guard !text.isEmpty,
-                  !text.hasPrefix("<ide_selection>"),
-                  !text.hasPrefix("<system-reminder>") else { continue }
+                  !isMachineGeneratedUserTurn(text) else { continue }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 prompts.append(String(trimmed.prefix(500)))

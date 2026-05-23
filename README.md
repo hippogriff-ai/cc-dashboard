@@ -81,3 +81,9 @@ window. That's all it's used for.
   data sources, sidecar IPC, full keyboard-shortcut reference.
 - [docs/screenshots/README.md](docs/screenshots/README.md) — for refreshing
   the images on this page.
+
+## License
+
+[MIT](LICENSE). Bundles a small subset of
+[sindresorhus/KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts)
+(also MIT) — see [LICENSE-VENDORED.md](LICENSE-VENDORED.md).

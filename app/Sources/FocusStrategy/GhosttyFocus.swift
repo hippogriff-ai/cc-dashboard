@@ -46,14 +46,22 @@ private let axPromptOnce = AXPromptOnce()
 // MARK: - Public entry point
 
 enum GhosttyFocus {
-    /// Mirrors `MIN_SCORE` in the prior `backend/src/ghostty/focus.ts`.
-    /// A best-window score below this is treated as "no confident match" —
-    /// activating Ghostty without a target raise is preferable to landing on
-    /// a wrong window when the matcher's signal is weak.
-    private static let minScore = 5
-    /// Mirrors `MIN_MARGIN`. Even a high-scoring window is rejected if the
-    /// runner-up's score is within `MIN_MARGIN`, because the matcher can't
-    /// reliably distinguish two similar candidates from window titles alone.
+    /// Minimum absolute score for the winning window. Was 5 in the original
+    /// TS port — empirically too strict in the post-slash-command-filter era:
+    /// a session whose only signal is a single early-bucket hit (weight 3)
+    /// against the one window whose title matches by topic would score
+    /// exactly 3 and get rejected, even when no other window had ANY
+    /// overlap. Real-world failure: Thrive session matched window 4 ("Daily
+    /// coding practice session") via the single shared token "practice"
+    /// while every other window scored 0. The protective signal there isn't
+    /// the absolute score — it's the wide margin (3 vs 0). MIN_MARGIN below
+    /// already handles ambiguity; MIN_SCORE just needs to gate "no overlap
+    /// at all" cases (where every window scores 0 trivially).
+    private static let minScore = 3
+    /// Even a high-scoring window is rejected if the runner-up's score is
+    /// within `MIN_MARGIN`. This is the actual ambiguity guard: when two
+    /// windows tie or near-tie, the matcher can't reliably pick the right
+    /// one from titles alone, so it bails and lets the user pick.
     private static let minMargin = 3
 
     /// Find and raise the Ghostty window hosting the session at `cwd`/`sid`.

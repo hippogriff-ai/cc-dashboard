@@ -86,11 +86,29 @@ enum GhosttyFocus {
         // user now has a one-click path to grant rather than digging
         // through System Settings manually.
         if !AXIsProcessTrusted(), await axPromptOnce.tryFire() {
-            let options: NSDictionary = [
-                kAXTrustedCheckOptionPrompt.takeRetainedValue(): true
-            ]
-            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
-            logger.info("AX not trusted; system prompt requested")
+            // Two correctness notes here, both load-bearing for the system
+            // dialog to actually appear:
+            //
+            // 1. `kAXTrustedCheckOptionPrompt` is a framework-owned Get-rule
+            //    CFString constant. `takeRetainedValue()` would (incorrectly)
+            //    take ownership of a +1 retain that doesn't exist, leading
+            //    to an over-release when the dictionary tears down. Use
+            //    `takeUnretainedValue()` — every Apple sample does.
+            //
+            // 2. `AXIsProcessTrustedWithOptions` surfaces a system UI alert
+            //    via the WindowServer. macOS expects this to be called on
+            //    the main thread; from a background thread the dialog can
+            //    silently fail to appear (observed in the wild: user clicked
+            //    Focus repeatedly, only got the in-app red banner, never the
+            //    system "Open System Settings" dialog). Hop to the main
+            //    actor for the call.
+            await MainActor.run {
+                let options: NSDictionary = [
+                    kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true
+                ]
+                _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+                logger.info("AX not trusted; system prompt requested")
+            }
         }
 
         let prompts = sessionPrompts(cwd: cwd, sid: sid)
